@@ -83,6 +83,12 @@ public sealed class StorageOptions
     /// The storage provider to use.
     /// </summary>
     public StorageProvider Provider { get; init; } = StorageProvider.InMemory;
+
+    /// <summary>
+    /// Use sqlite-vec extension for efficient vector search when using SQLite storage.
+    /// Only applicable when Provider is Sqlite.
+    /// </summary>
+    public bool UseSqliteVec { get; init; } = true;
 }
 
 /// <summary>

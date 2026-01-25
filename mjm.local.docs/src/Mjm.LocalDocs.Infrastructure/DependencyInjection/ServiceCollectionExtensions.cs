@@ -90,8 +90,17 @@ public static class ServiceCollectionExtensions
 
                 services.AddScoped<IProjectRepository, SqliteProjectRepository>();
                 services.AddScoped<IDocumentRepository, SqliteDocumentRepository>();
-                services.AddSingleton<IVectorStore>(sp =>
-                    new SqliteVectorStore(connectionString, embeddingDimension));
+                
+                if (storageOptions.UseSqliteVec)
+                {
+                    services.AddSingleton<IVectorStore>(sp =>
+                        new SqliteVecVectorStore(connectionString, embeddingDimension));
+                }
+                else
+                {
+                    services.AddSingleton<IVectorStore>(sp =>
+                        new SqliteVectorStore(connectionString, embeddingDimension));
+                }
                 break;
 
             case StorageProvider.InMemory:
@@ -144,11 +153,13 @@ public static class ServiceCollectionExtensions
     /// <param name="connectionString">SQLite connection string (e.g., "Data Source=localdocs.db").</param>
     /// <param name="embeddingGenerator">The embedding generator to use.</param>
     /// <param name="embeddingDimension">Dimension of embedding vectors (default 1536).</param>
+    /// <param name="useSqliteVec">Use sqlite-vec extension for efficient vector search (default true).</param>
     public static IServiceCollection AddLocalDocsSqliteInfrastructure(
         this IServiceCollection services,
         string connectionString,
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        int embeddingDimension = 1536)
+        int embeddingDimension = 1536,
+        bool useSqliteVec = true)
     {
         // DbContext
         services.AddDbContext<LocalDocsDbContext>(options =>
@@ -159,8 +170,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDocumentRepository, SqliteDocumentRepository>();
         
         // Vector store (singleton with its own connection)
-        services.AddSingleton<IVectorStore>(sp =>
-            new SqliteVectorStore(connectionString, embeddingDimension));
+        if (useSqliteVec)
+        {
+            services.AddSingleton<IVectorStore>(sp =>
+                new SqliteVecVectorStore(connectionString, embeddingDimension));
+        }
+        else
+        {
+            services.AddSingleton<IVectorStore>(sp =>
+                new SqliteVectorStore(connectionString, embeddingDimension));
+        }
 
         // Processing services
         services.AddSingleton<IDocumentProcessor>(new SimpleDocumentProcessor());
@@ -180,10 +199,12 @@ public static class ServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="connectionString">SQLite connection string (e.g., "Data Source=localdocs.db").</param>
     /// <param name="embeddingDimension">Dimension of embedding vectors (default 1536).</param>
+    /// <param name="useSqliteVec">Use sqlite-vec extension for efficient vector search (default true).</param>
     public static IServiceCollection AddLocalDocsSqliteFakeInfrastructure(
         this IServiceCollection services,
         string connectionString,
-        int embeddingDimension = 1536)
+        int embeddingDimension = 1536,
+        bool useSqliteVec = true)
     {
         // DbContext
         services.AddDbContext<LocalDocsDbContext>(options =>
@@ -194,8 +215,16 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IDocumentRepository, SqliteDocumentRepository>();
         
         // Vector store (singleton with its own connection)
-        services.AddSingleton<IVectorStore>(sp =>
-            new SqliteVectorStore(connectionString, embeddingDimension));
+        if (useSqliteVec)
+        {
+            services.AddSingleton<IVectorStore>(sp =>
+                new SqliteVecVectorStore(connectionString, embeddingDimension));
+        }
+        else
+        {
+            services.AddSingleton<IVectorStore>(sp =>
+                new SqliteVectorStore(connectionString, embeddingDimension));
+        }
 
         // Processing services
         services.AddSingleton<IDocumentProcessor>(new SimpleDocumentProcessor());
