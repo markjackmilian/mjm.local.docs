@@ -11,8 +11,7 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.6.0-preview.1" />
-    <PackageReference Include="MudBlazor" Version="8.15.0" />
-    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+<PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>
 
@@ -20,8 +19,19 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
-    <UserSecretsId>8ef649af-010c-4434-8adc-98da93e2e355</UserSecretsId>
+<UserSecretsId>8ef649af-010c-4434-8adc-98da93e2e355</UserSecretsId>
   </PropertyGroup>
+
+  <!-- React client build integration -->
+  <Target Name="BuildReactApp" BeforeTargets="Build"
+          Condition="!Exists('wwwroot/index.html') Or '$(Configuration)' == 'Release'">
+    <Exec WorkingDirectory="client" Command="npm install" />
+    <Exec WorkingDirectory="client" Command="npm run build" />
+  </Target>
+
+  <Target Name="PublishReactApp" BeforeTargets="Publish">
+    <Exec WorkingDirectory="client" Command="npm install" />
+    <Exec WorkingDirectory="client" Command="npm run build" />
+  </Target>
 
 </Project>
