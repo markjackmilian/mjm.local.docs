@@ -1,0 +1,24 @@
+/* DataGrid global styles */
+.MuiDataGrid-root {
+  border: none !important;
+}
+
+.MuiDataGrid-columnHeaderTitle {
+  font-weight: 700 !important;
+  font-size: 0.75rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: #64748B !important;
+}
+
+.MuiDataGrid-columnHeaders {
+  background-color: #F1F5F9 !important;
+}
+
+.MuiDataGrid-cell {
+  border-color: rgba(148, 163, 184, 0.1) !important;
+}
+
+.MuiDataGrid-row:hover {
+  background-color: rgba(59, 130, 246, 0.02) !important;
+}

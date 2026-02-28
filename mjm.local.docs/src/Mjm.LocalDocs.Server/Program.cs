@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -10,11 +8,9 @@ using Mjm.LocalDocs.Core.Models;
 using LocalDocsAuthOptions = Mjm.LocalDocs.Core.Models.AuthenticationOptions;
 using Mjm.LocalDocs.Infrastructure.DependencyInjection;
 using Mjm.LocalDocs.Infrastructure.Persistence;
-using Mjm.LocalDocs.Server.Components;
 using Mjm.LocalDocs.Server.McpTools;
 using Mjm.LocalDocs.Server.Middleware;
 using ModelContextProtocol.AspNetCore;
-using MudBlazor.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,15 +20,23 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services));
 
-// Add Blazor services
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+// Add API Controllers
+builder.Services.AddControllers()
+    .AddJsonOptions(opts =>
+        opts.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase);
 
-// Add MudBlazor services
-builder.Services.AddMudServices();
-
-// Add HttpClient for login API calls
-builder.Services.AddHttpClient();
+// Add CORS for Vite dev server
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("ViteDev", policy =>
+            policy.WithOrigins("http://localhost:5173")
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials());
+    });
+}
 
 // Add Cookie Authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -45,9 +49,22 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.SlidingExpiration = true;
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
+        // Return 401 for API requests instead of redirecting to login
+        options.Events = new CookieAuthenticationEvents
+        {
+            OnRedirectToLogin = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                }
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            }
+        };
     });
 builder.Services.AddAuthorization();
-builder.Services.AddCascadingAuthenticationState();
 
 // Add MCP Server with tools
 builder.Services
@@ -198,8 +215,6 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
-
 // HTTPS redirect only when UseHttps is enabled, and only for non-MCP requests
 // MCP tools may connect via HTTP even when HTTPS is enabled for the web UI
 if (serverOptions.UseHttps)
@@ -209,68 +224,27 @@ if (serverOptions.UseHttps)
         appBuilder => appBuilder.UseHttpsRedirection());
 }
 
-app.UseAntiforgery();
+app.UseStaticFiles();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
+// CORS for Vite dev server
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("ViteDev");
+}
+
 // MCP Authentication middleware (Bearer token validation)
 app.UseMcpAuthentication("/mcp");
 
-// Login endpoint (POST) - browser form submission
-app.MapPost("/api/login", async (
-    HttpContext context,
-    IOptions<LocalDocsAuthOptions> authOptions) =>
-{
-    var form = await context.Request.ReadFormAsync();
-    var username = form["username"].ToString();
-    var password = form["password"].ToString();
-    var rememberMe = form["rememberMe"].ToString() == "true";
-    
-    var options = authOptions.Value;
-    
-    // Validate credentials against configuration
-    if (!string.Equals(username, options.Username, StringComparison.OrdinalIgnoreCase) ||
-        password != options.Password)
-    {
-        // Redirect back to login with error
-        return Results.Redirect("/login?error=invalid");
-    }
-
-    var claims = new List<Claim>
-    {
-        new(ClaimTypes.Name, options.Username),
-        new(ClaimTypes.NameIdentifier, options.Username)
-    };
-
-    var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-    var principal = new ClaimsPrincipal(identity);
-
-    var authProperties = new AuthenticationProperties
-    {
-        IsPersistent = rememberMe,
-        ExpiresUtc = rememberMe ? DateTimeOffset.UtcNow.AddDays(7) : null
-    };
-
-    await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProperties);
-
-    // Redirect to home page after successful login
-    return Results.Redirect("/");
-}).AllowAnonymous().DisableAntiforgery();
-
-// Logout endpoint
-app.MapGet("/logout", async (HttpContext context) =>
-{
-    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
-    return Results.Redirect("/login");
-}).AllowAnonymous();
+// Map API controllers
+app.MapControllers();
 
 // Map MCP endpoint
 app.MapMcp("/mcp");
 
-// Map Blazor
-app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+// SPA fallback: serve React index.html for all non-API, non-MCP routes
+app.MapFallbackToFile("index.html");
 
 app.Run();

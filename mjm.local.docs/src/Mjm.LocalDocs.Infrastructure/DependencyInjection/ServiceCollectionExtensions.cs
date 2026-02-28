@@ -84,6 +84,9 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<PdfDocumentReader>(),
             sp.GetRequiredService<WordDocumentReader>()
         ]));
+
+        // Register the interface so controllers can inject IDocumentReader
+        services.AddSingleton<IDocumentReader>(sp => sp.GetRequiredService<CompositeDocumentReader>());
     }
 
     private static void ConfigureStorage(
