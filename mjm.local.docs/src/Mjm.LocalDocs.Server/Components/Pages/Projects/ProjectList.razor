@@ -35,11 +35,11 @@
  {
      <div class="ld-empty-state">
          <MudIcon Icon="@Icons.Material.Rounded.FolderOff" 
-                  Style="font-size: 3rem; color: #D1D5DB; margin-bottom: 12px;" />
-         <MudText Style="font-size: 0.9375rem; font-weight: 600; color: #111827; margin-bottom: 4px;">
+                  Style="font-size: 3rem; color: var(--ld-text-disabled); margin-bottom: 12px;" />
+         <MudText Style="font-size: 0.9375rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 4px;">
              No projects found
          </MudText>
-         <MudText Style="font-size: 0.8125rem; color: #6B7280;">
+         <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
              Click "New Project" to create one.
          </MudText>
      </div>
@@ -88,7 +88,7 @@
                      <CellTemplate>
                          <MudChip T="string" Size="Size.Small" 
                                   Variant="Variant.Text"
-                                  Style="background: #ECFDF5; color: #059669; font-weight: 600;">
+                                  Style="background: var(--ld-chip-success-bg); color: var(--ld-chip-success-text); font-weight: 600;">
                              @context.Item.DocumentCount
                          </MudChip>
                      </CellTemplate>

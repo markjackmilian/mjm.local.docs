@@ -31,10 +31,10 @@ else
                         <MudIcon Icon="@Icons.Material.Rounded.FolderCopy" Style="font-size: 1.25rem;" />
                     </div>
                     <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: #111827; line-height: 1;">
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
                             @_projectCount
                         </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: #6B7280; margin-top: 2px;">Projects</MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Projects</MudText>
                     </div>
                 </div>
             </MudPaper>
@@ -47,10 +47,10 @@ else
                         <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 1.25rem;" />
                     </div>
                     <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: #111827; line-height: 1;">
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
                             @_documentCount
                         </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: #6B7280; margin-top: 2px;">Documents</MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Documents</MudText>
                     </div>
                 </div>
             </MudPaper>
@@ -63,10 +63,10 @@ else
                         <MudIcon Icon="@Icons.Material.Rounded.CloudQueue" Style="font-size: 1.25rem;" />
                     </div>
                     <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: #111827; line-height: 1;">
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
                             @FormatFileSize(_totalSize)
                         </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: #6B7280; margin-top: 2px;">Total Size</MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Total Size</MudText>
                     </div>
                 </div>
             </MudPaper>
@@ -113,22 +113,22 @@ else
                               Style="border-radius: var(--ld-radius-lg);"
                               @onclick="@(() => Navigation.NavigateTo($"/projects/{project.Id}"))">
                         <div class="d-flex align-center mb-3" style="gap: 10px;">
-                            <div style="width: 36px; height: 36px; border-radius: 10px; background: #D1FAE5; display: flex; align-items: center; justify-content: center;">
-                                <MudIcon Icon="@Icons.Material.Rounded.Folder" Style="color: #059669; font-size: 1.125rem;" />
+                            <div style="width: 36px; height: 36px; border-radius: 10px; background: var(--ld-folder-bg); display: flex; align-items: center; justify-content: center;">
+                                <MudIcon Icon="@Icons.Material.Rounded.Folder" Style="color: var(--ld-folder-icon); font-size: 1.125rem;" />
                             </div>
-                            <MudText Style="font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; color: #111827;">
+                            <MudText Style="font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ld-text-primary);">
                                 @project.Name
                             </MudText>
                         </div>
                         @if (!string.IsNullOrEmpty(project.Description))
                         {
-                            <MudText Style="font-size: 0.8125rem; color: #6B7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 12px;">
+                            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 12px;">
                                 @project.Description
                             </MudText>
                         }
                         <div class="d-flex align-center" style="gap: 6px;">
-                            <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 0.875rem; color: #9CA3AF;" />
-                            <MudText Style="font-size: 0.75rem; color: #9CA3AF;">
+                            <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 0.875rem; color: var(--ld-text-muted);" />
+                            <MudText Style="font-size: 0.75rem; color: var(--ld-text-muted);">
                                 @GetDocumentCountForProject(project.Id) documents
                             </MudText>
                         </div>
@@ -141,11 +141,11 @@ else
     {
         <div class="ld-empty-state">
             <MudIcon Icon="@Icons.Material.Rounded.CreateNewFolder" 
-                     Style="font-size: 3rem; color: #D1D5DB; margin-bottom: 12px;" />
-            <MudText Style="font-size: 0.9375rem; font-weight: 600; color: #111827; margin-bottom: 4px;">
+                     Style="font-size: 3rem; color: var(--ld-text-disabled); margin-bottom: 12px;" />
+            <MudText Style="font-size: 0.9375rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 4px;">
                 No projects yet
             </MudText>
-            <MudText Style="font-size: 0.8125rem; color: #6B7280; margin-bottom: 20px;">
+            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-bottom: 20px;">
                 Create your first project to start organizing documents.
             </MudText>
             <MudButton Variant="Variant.Filled" Color="Color.Primary"

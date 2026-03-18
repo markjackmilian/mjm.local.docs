@@ -1,0 +1,47 @@
+@rendermode InteractiveServer
+@inject ThemeService ThemeService
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="d-flex align-center justify-space-between" style="padding: 0 4px;">
+    <div class="d-flex align-center" style="gap: 8px;">
+        <MudIcon Icon="@(ThemeService.IsDarkMode ? Icons.Material.Rounded.DarkMode : Icons.Material.Rounded.LightMode)" 
+                 Style="font-size: 1.125rem; color: var(--ld-text-muted);" />
+        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); font-weight: 500;">
+            @(ThemeService.IsDarkMode ? "Dark" : "Light")
+        </MudText>
+    </div>
+    <MudSwitch T="bool" 
+               Value="@ThemeService.IsDarkMode" 
+               ValueChanged="ToggleThemeAsync" 
+               Color="Color.Primary" 
+               Size="Size.Small" />
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        ThemeService.OnChange += OnThemeChanged;
+    }
+
+    private async Task ToggleThemeAsync(bool isDark)
+    {
+        ThemeService.SetDarkMode(isDark);
+        try
+        {
+            await JS.InvokeVoidAsync("themeStorage.apply", isDark);
+            await JS.InvokeVoidAsync("themeStorage.set", isDark.ToString().ToLowerInvariant());
+        }
+        catch
+        {
+            // JS interop may not be available
+        }
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        ThemeService.OnChange -= OnThemeChanged;
+    }
+}

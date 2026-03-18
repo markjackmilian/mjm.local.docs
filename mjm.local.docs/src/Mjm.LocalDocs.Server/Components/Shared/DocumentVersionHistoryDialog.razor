@@ -29,7 +29,7 @@
                                     <MudChip T="string"
                                              Size="Size.Small"
                                              Variant="@(version.Id == CurrentDocumentId ? Variant.Filled : Variant.Outlined)"
-                                             Style="@(version.Id == CurrentDocumentId ? "background: var(--ld-primary-lightest); color: var(--ld-primary);" : "color: var(--ld-text-secondary); border-color: var(--ld-border);")">
+                                             Style="@(version.Id == CurrentDocumentId ? "background: var(--ld-primary-lightest); color: var(--ld-primary);" : "color: var(--ld-chip-default-text); border-color: var(--ld-border);")">
                                         v@(version.VersionNumber)
                                     </MudChip>
                                 </td>
@@ -40,13 +40,13 @@
                                 <td>
                                     @if (version.IsSuperseded)
                                     {
-                                        <MudChip T="string" Size="Size.Small" Style="background: #FEF3C7; color: #92400E;">
+                                        <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-warning-bg); color: var(--ld-chip-warning-text);">
                                             Superseded
                                         </MudChip>
                                     }
                                     else
                                     {
-                                        <MudChip T="string" Size="Size.Small" Style="background: #ECFDF5; color: #065F46;">
+                                        <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-success-bg); color: var(--ld-chip-success-text);">
                                             Current
                                         </MudChip>
                                     }

@@ -14,6 +14,7 @@ using Mjm.LocalDocs.Server.Components;
 using Mjm.LocalDocs.Server.McpTools;
 using Mjm.LocalDocs.Server.Middleware;
 using ModelContextProtocol.AspNetCore;
+using Mjm.LocalDocs.Server.Services;
 using MudBlazor.Services;
 using Serilog;
 
@@ -30,6 +31,9 @@ builder.Services.AddRazorComponents()
 
 // Add MudBlazor services
 builder.Services.AddMudServices();
+
+// Add theme service (scoped per Blazor circuit)
+builder.Services.AddScoped<ThemeService>();
 
 // Add HttpClient for login API calls
 builder.Services.AddHttpClient();

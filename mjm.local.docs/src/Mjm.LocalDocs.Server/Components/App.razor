@@ -15,6 +15,19 @@
     <link rel="stylesheet" href="@Assets["Mjm.LocalDocs.Server.styles.css"]" />
     <ImportMap />
     <HeadOutlet />
+    <script>
+        // Apply dark mode immediately to prevent flash of wrong theme.
+        // Runs before any rendering occurs.
+        (function() {
+            var saved = localStorage.getItem('darkMode');
+            var isDark = saved !== null 
+                ? saved === 'true' 
+                : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
 </head>
 
 <body>
@@ -34,6 +47,35 @@
             link.click();
             document.body.removeChild(link);
         };
+
+        window.themeStorage = {
+            get: function() {
+                return localStorage.getItem('darkMode');
+            },
+            set: function(value) {
+                localStorage.setItem('darkMode', value);
+            },
+            getSystemPreference: function() {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches;
+            },
+            apply: function(isDark) {
+                if (isDark) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }
+        };
+
+        // Re-apply dark mode after Blazor enhanced navigation
+        // (enhanced nav replaces DOM content but keeps the page alive)
+        Blazor.addEventListener('enhancedload', function() {
+            var saved = localStorage.getItem('darkMode');
+            var isDark = saved !== null
+                ? saved === 'true'
+                : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            window.themeStorage.apply(isDark);
+        });
     </script>
 </body>
 

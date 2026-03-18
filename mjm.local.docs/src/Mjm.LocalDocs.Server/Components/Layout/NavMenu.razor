@@ -1,28 +1,35 @@
-@inject NavigationManager Navigation
+<div style="display: flex; flex-direction: column; height: 100%;">
+    <div style="padding: 20px 16px 8px 16px;">
+        <p class="ld-section-title" style="padding-left: 12px;">MENU</p>
+    </div>
 
-<div style="padding: 20px 16px 8px 16px;">
-    <p class="ld-section-title" style="padding-left: 12px; color: #9CA3AF;">MENU</p>
+    <MudNavMenu Color="Color.Primary" Bordered="true" Class="px-2">
+        <MudNavLink Href="/" Match="NavLinkMatch.All" 
+                    Icon="@Icons.Material.Rounded.SpaceDashboard"
+                    Style="border-radius: 8px; margin-bottom: 2px;">
+            Dashboard
+        </MudNavLink>
+        <MudNavLink Href="/projects" Match="NavLinkMatch.Prefix" 
+                    Icon="@Icons.Material.Rounded.FolderCopy"
+                    Style="border-radius: 8px; margin-bottom: 2px;">
+            Projects
+        </MudNavLink>
+        <MudNavLink Href="/mcp-config" Match="NavLinkMatch.All" 
+                    Icon="@Icons.Material.Rounded.Cable"
+                    Style="border-radius: 8px; margin-bottom: 2px;">
+            MCP Config
+        </MudNavLink>
+        <MudNavLink Href="/settings/tokens" Match="NavLinkMatch.All" 
+                    Icon="@Icons.Material.Rounded.VpnKey"
+                    Style="border-radius: 8px; margin-bottom: 2px;">
+            API Tokens
+        </MudNavLink>
+    </MudNavMenu>
+
+    <div style="flex: 1;"></div>
+
+    @* Theme toggle - interactive component *@
+    <div class="ld-theme-toggle">
+        <ThemeToggle />
+    </div>
 </div>
-
-<MudNavMenu Color="Color.Primary" Bordered="true" Class="px-2">
-    <MudNavLink Href="/" Match="NavLinkMatch.All" 
-                Icon="@Icons.Material.Rounded.SpaceDashboard"
-                Style="border-radius: 8px; margin-bottom: 2px;">
-        Dashboard
-    </MudNavLink>
-    <MudNavLink Href="/projects" Match="NavLinkMatch.Prefix" 
-                Icon="@Icons.Material.Rounded.FolderCopy"
-                Style="border-radius: 8px; margin-bottom: 2px;">
-        Projects
-    </MudNavLink>
-    <MudNavLink Href="/mcp-config" Match="NavLinkMatch.All" 
-                Icon="@Icons.Material.Rounded.Cable"
-                Style="border-radius: 8px; margin-bottom: 2px;">
-        MCP Config
-    </MudNavLink>
-    <MudNavLink Href="/settings/tokens" Match="NavLinkMatch.All" 
-                Icon="@Icons.Material.Rounded.VpnKey"
-                Style="border-radius: 8px; margin-bottom: 2px;">
-        API Tokens
-    </MudNavLink>
-</MudNavMenu>

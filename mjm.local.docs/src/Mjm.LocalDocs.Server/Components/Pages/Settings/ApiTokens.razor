@@ -81,15 +81,15 @@ else
                     <CellTemplate>
                         @if (context.Item.IsRevoked)
                         {
-                            <MudChip T="string" Size="Size.Small" Style="background: #FEF2F2; color: #991B1B;">Revoked</MudChip>
+                            <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-error-bg); color: var(--ld-chip-error-text);">Revoked</MudChip>
                         }
                         else if (context.Item.ExpiresAt.HasValue && context.Item.ExpiresAt.Value < DateTimeOffset.UtcNow)
                         {
-                            <MudChip T="string" Size="Size.Small" Style="background: #FEF3C7; color: #92400E;">Expired</MudChip>
+                            <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-warning-bg); color: var(--ld-chip-warning-text);">Expired</MudChip>
                         }
                         else
                         {
-                            <MudChip T="string" Size="Size.Small" Style="background: #ECFDF5; color: #065F46;">Active</MudChip>
+                            <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-success-bg); color: var(--ld-chip-success-text);">Active</MudChip>
                         }
                     </CellTemplate>
                 </TemplateColumn>

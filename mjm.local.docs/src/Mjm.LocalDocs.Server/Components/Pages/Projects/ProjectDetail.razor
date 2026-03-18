@@ -232,14 +232,14 @@ else
                                         <MudChip T="string"
                                                  Size="Size.Small"
                                                  Variant="@(context.Item.IsSuperseded ? Variant.Outlined : Variant.Filled)"
-                                                 Style="@(context.Item.IsSuperseded ? "color: #9CA3AF; border-color: #E5E7EB;" : "background: #ECFDF5; color: #059669;")">
+                                                                                                   Style="@(context.Item.IsSuperseded ? "color: var(--ld-chip-default-text); border-color: var(--ld-border);" : "background: var(--ld-chip-success-bg); color: var(--ld-chip-success-text);")">
                                             v@(context.Item.VersionNumber)
                                         </MudChip>
                                         @if (context.Item.IsSuperseded)
                                         {
                                             <MudChip T="string" Size="Size.Small" 
                                                      Variant="Variant.Filled" 
-                                                     Style="background: #FEF3C7; color: #92400E; margin-left: 4px;">
+                                                     Style="background: var(--ld-chip-warning-bg); color: var(--ld-chip-warning-text); margin-left: 4px;">
                                                 Superseded
                                             </MudChip>
                                         }
@@ -869,26 +869,26 @@ else
 
     private static string GetFileBgColor(string extension) => extension.ToLowerInvariant() switch
     {
-        ".pdf" => "#FEF2F2",
-        ".doc" or ".docx" => "#EEF2FF",
-        ".xls" or ".xlsx" => "#ECFDF5",
-        ".txt" or ".md" => "#F8FAFC",
-        ".json" or ".xml" => "#FFFBEB",
-        ".csv" => "#EFF6FF",
-        ".html" or ".htm" => "#F5F3FF",
-        _ => "#F8FAFC"
+        ".pdf" => "var(--ld-file-pdf-bg)",
+        ".doc" or ".docx" => "var(--ld-file-docx-bg)",
+        ".xls" or ".xlsx" => "var(--ld-file-xlsx-bg)",
+        ".txt" or ".md" => "var(--ld-file-txt-bg)",
+        ".json" or ".xml" => "var(--ld-file-json-bg)",
+        ".csv" => "var(--ld-file-csv-bg)",
+        ".html" or ".htm" => "var(--ld-file-html-bg)",
+        _ => "var(--ld-file-default-bg)"
     };
 
     private static string GetFileIconStyle(string extension) => extension.ToLowerInvariant() switch
     {
-        ".pdf" => "color: #EF4444;",
-        ".doc" or ".docx" => "color: #2563EB;",
-        ".xls" or ".xlsx" => "color: #22C55E;",
-        ".txt" or ".md" => "color: #64748B;",
-        ".json" or ".xml" => "color: #F59E0B;",
-        ".csv" => "color: #3B82F6;",
-        ".html" or ".htm" => "color: #8B5CF6;",
-        _ => "color: #94A3B8;"
+        ".pdf" => "color: var(--ld-file-pdf-icon);",
+        ".doc" or ".docx" => "color: var(--ld-file-docx-icon);",
+        ".xls" or ".xlsx" => "color: var(--ld-file-xlsx-icon);",
+        ".txt" or ".md" => "color: var(--ld-file-txt-icon);",
+        ".json" or ".xml" => "color: var(--ld-file-json-icon);",
+        ".csv" => "color: var(--ld-file-csv-icon);",
+        ".html" or ".htm" => "color: var(--ld-file-html-icon);",
+        _ => "color: var(--ld-file-default-icon);"
     };
 
     private static string GetMimeType(string extension) => extension.ToLowerInvariant() switch
