@@ -1,38 +1,52 @@
 /* ============================================================
    Local Docs — Design System
-   Palette: Slate/Indigo | Font: Inter | Minimal & Modern
+   Palette: Emerald / Green  |  Light theme  |  Minimal & Modern
    ============================================================ */
 
-/* --- CSS Custom Properties --------------------------------- */
+/* --- Custom Properties -------------------------------------- */
 :root {
-    --ld-primary: #6366F1;
-    --ld-primary-dark: #4F46E5;
-    --ld-primary-light: #818CF8;
-    --ld-primary-lightest: #EEF2FF;
+    --ld-primary: #10B981;
+    --ld-primary-dark: #059669;
+    --ld-primary-light: #34D399;
+    --ld-primary-lightest: #ECFDF5;
+    --ld-primary-subtle: #D1FAE5;
+
+    --ld-accent: #0EA5E9;
+    --ld-accent-light: #E0F2FE;
+
     --ld-surface: #FFFFFF;
-    --ld-background: #F8FAFC;
-    --ld-appbar: #0F172A;
-    --ld-drawer: #1E293B;
-    --ld-drawer-hover: #334155;
-    --ld-drawer-active: #4F46E5;
-    --ld-text-primary: #0F172A;
-    --ld-text-secondary: #64748B;
-    --ld-text-muted: #94A3B8;
-    --ld-border: #E2E8F0;
-    --ld-border-light: #F1F5F9;
+    --ld-background: #F9FAFB;
+    --ld-background-alt: #F3F4F6;
+
+    --ld-appbar: #FFFFFF;
+    --ld-sidebar: #FFFFFF;
+    --ld-sidebar-hover: #F0FDF4;
+    --ld-sidebar-active: #ECFDF5;
+
+    --ld-text-primary: #111827;
+    --ld-text-secondary: #6B7280;
+    --ld-text-muted: #9CA3AF;
+
+    --ld-border: #E5E7EB;
+    --ld-border-light: #F3F4F6;
+
     --ld-error: #EF4444;
-    --ld-success: #22C55E;
+    --ld-success: #10B981;
     --ld-warning: #F59E0B;
-    --ld-info: #3B82F6;
+    --ld-info: #0EA5E9;
+
     --ld-radius-sm: 8px;
     --ld-radius-md: 12px;
     --ld-radius-lg: 16px;
     --ld-radius-xl: 20px;
     --ld-radius-pill: 9999px;
-    --ld-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-    --ld-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06);
-    --ld-shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.08);
-    --ld-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --ld-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+    --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+    --ld-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
+    --ld-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+
+    --ld-transition: 0.15s ease;
 }
 
 /* --- Base --------------------------------------------------- */
@@ -78,19 +92,19 @@ h1:focus {
 
 /* --- Global MudBlazor Overrides ----------------------------- */
 
-/* Cards & Papers: no elevation, border-based */
 .mud-paper {
-    transition: box-shadow var(--ld-transition), border-color var(--ld-transition);
+    transition: box-shadow var(--ld-transition), border-color var(--ld-transition), transform var(--ld-transition);
 }
 
-/* DataGrid: clean modern look */
+/* DataGrid: clean headers */
 .mud-table .mud-table-head .mud-table-cell {
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--ld-text-secondary);
-    border-bottom: 2px solid var(--ld-border);
+    letter-spacing: 0.06em;
+    color: var(--ld-text-muted);
+    border-bottom: 1px solid var(--ld-border);
+    background: var(--ld-background);
 }
 
 .mud-table .mud-table-body .mud-table-row:hover {
@@ -98,26 +112,33 @@ h1:focus {
 }
 
 .mud-table .mud-table-body .mud-table-row.mud-table-row-striped {
-    background-color: transparent;
+    background-color: var(--ld-background);
 }
 
-/* Chips: pill shape */
+/* Chips: pill */
 .mud-chip {
     border-radius: var(--ld-radius-pill) !important;
+    font-weight: 500 !important;
 }
 
-/* Dialogs: generous radius */
+/* Dialogs */
 .mud-dialog {
     border-radius: var(--ld-radius-lg) !important;
+    box-shadow: var(--ld-shadow-lg) !important;
 }
 
-/* Buttons: subtle radius */
+/* Buttons */
 .mud-button-root {
     border-radius: var(--ld-radius-sm) !important;
     text-transform: none !important;
     font-weight: 500 !important;
     letter-spacing: 0 !important;
     transition: all var(--ld-transition) !important;
+    box-shadow: none !important;
+}
+
+.mud-button-root:hover {
+    box-shadow: var(--ld-shadow-sm) !important;
 }
 
 /* Input fields */
@@ -126,12 +147,7 @@ h1:focus {
     transition: border-color var(--ld-transition);
 }
 
-/* Breadcrumbs */
-.mud-breadcrumbs .mud-breadcrumb-item {
-    font-size: 0.875rem;
-}
-
-/* Alerts: rounded */
+/* Alerts */
 .mud-alert {
     border-radius: var(--ld-radius-md) !important;
 }
@@ -148,22 +164,21 @@ h1:focus {
 
 /* --- Utility Classes ---------------------------------------- */
 
-/* Heading styles with tight tracking */
 .ld-heading {
     letter-spacing: -0.025em;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--ld-text-primary);
 }
 
-/* Stat card backgrounds */
-.ld-stat-indigo {
-    background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-    border: 1px solid #C7D2FE;
-}
-
-.ld-stat-emerald {
+/* Stat card backgrounds - colorful gradient pastels */
+.ld-stat-green {
     background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
     border: 1px solid #A7F3D0;
+}
+
+.ld-stat-blue {
+    background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+    border: 1px solid #BFDBFE;
 }
 
 .ld-stat-amber {
@@ -171,42 +186,53 @@ h1:focus {
     border: 1px solid #FDE68A;
 }
 
-/* Stat icon circle */
+.ld-stat-purple {
+    background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
+    border: 1px solid #DDD6FE;
+}
+
+/* Stat icon containers */
 .ld-stat-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--ld-radius-md);
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
 
-.ld-stat-icon-indigo {
-    background: rgba(99, 102, 241, 0.12);
-    color: var(--ld-primary);
+.ld-stat-icon-green {
+    background: #D1FAE5;
+    color: #059669;
 }
 
-.ld-stat-icon-emerald {
-    background: rgba(34, 197, 94, 0.12);
-    color: var(--ld-success);
+.ld-stat-icon-blue {
+    background: #DBEAFE;
+    color: #2563EB;
 }
 
 .ld-stat-icon-amber {
-    background: rgba(245, 158, 11, 0.12);
-    color: var(--ld-warning);
+    background: #FEF3C7;
+    color: #D97706;
 }
 
-/* Card hover effect */
+.ld-stat-icon-purple {
+    background: #EDE9FE;
+    color: #7C3AED;
+}
+
+/* Card hover */
 .ld-card-hover {
     transition: all var(--ld-transition);
     border: 1px solid var(--ld-border);
+    background: var(--ld-surface);
 }
 
 .ld-card-hover:hover {
     border-color: var(--ld-primary-light);
     box-shadow: var(--ld-shadow-md);
-    transform: translateY(-1px);
+    transform: translateY(-2px);
 }
 
 /* Upload dropzone */
@@ -214,43 +240,52 @@ h1:focus {
     border: 2px dashed var(--ld-border);
     border-radius: var(--ld-radius-lg);
     transition: all var(--ld-transition);
-    background: var(--ld-background);
+    background: var(--ld-surface);
     position: relative;
 }
 
 .ld-dropzone:hover,
 .ld-dropzone-active {
-    border-color: var(--ld-primary-light);
+    border-color: var(--ld-primary);
     background: var(--ld-primary-lightest);
 }
 
-/* Code blocks (for MCP config) */
+/* Code blocks - dark terminal style */
 .ld-code-block {
-    background-color: #1E293B;
-    color: #E2E8F0;
-    border: 1px solid #334155;
-    border-radius: var(--ld-radius-sm);
-    padding: 16px;
+    background-color: #1F2937;
+    color: #D1D5DB;
+    border: 1px solid #374151;
+    border-radius: var(--ld-radius-md);
+    padding: 16px 20px;
     overflow-x: auto;
-    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
     font-size: 0.8125rem;
-    line-height: 1.6;
+    line-height: 1.7;
     margin: 0;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
 
-/* Section divider */
+/* Section title */
 .ld-section-title {
     font-size: 0.6875rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: var(--ld-text-muted);
     margin-bottom: 12px;
 }
 
-/* Scrollbar styling */
+/* Empty state container */
+.ld-empty-state {
+    border: 2px dashed var(--ld-border);
+    border-radius: var(--ld-radius-lg);
+    text-align: center;
+    padding: 48px 24px;
+    background: var(--ld-surface);
+}
+
+/* Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -261,16 +296,23 @@ h1:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #CBD5E1;
+    background: #D1D5DB;
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #94A3B8;
+    background: #9CA3AF;
 }
 
-/* Selection color */
+/* Selection */
 ::selection {
-    background: rgba(99, 102, 241, 0.2);
+    background: rgba(16, 185, 129, 0.15);
     color: var(--ld-text-primary);
+}
+
+/* Nav menu items on light sidebar */
+.mud-nav-link {
+    border-radius: var(--ld-radius-sm) !important;
+    margin-bottom: 2px;
+    transition: all var(--ld-transition);
 }

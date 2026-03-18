@@ -232,7 +232,7 @@ else
                                         <MudChip T="string"
                                                  Size="Size.Small"
                                                  Variant="@(context.Item.IsSuperseded ? Variant.Outlined : Variant.Filled)"
-                                                 Style="@(context.Item.IsSuperseded ? "color: var(--ld-text-muted); border-color: var(--ld-border);" : "background: var(--ld-primary-lightest); color: var(--ld-primary);")">
+                                                 Style="@(context.Item.IsSuperseded ? "color: #9CA3AF; border-color: #E5E7EB;" : "background: #ECFDF5; color: #059669;")">
                                             v@(context.Item.VersionNumber)
                                         </MudChip>
                                         @if (context.Item.IsSuperseded)
@@ -882,7 +882,7 @@ else
     private static string GetFileIconStyle(string extension) => extension.ToLowerInvariant() switch
     {
         ".pdf" => "color: #EF4444;",
-        ".doc" or ".docx" => "color: #6366F1;",
+        ".doc" or ".docx" => "color: #2563EB;",
         ".xls" or ".xlsx" => "color: #22C55E;",
         ".txt" or ".md" => "color: #64748B;",
         ".json" or ".xml" => "color: #F59E0B;",

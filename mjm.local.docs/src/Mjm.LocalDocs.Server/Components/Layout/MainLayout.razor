@@ -3,11 +3,13 @@
 <MudThemeProvider Theme="_theme" IsDarkMode="false" />
 
 <MudLayout>
-    <MudAppBar Elevation="0" Style="background: var(--ld-appbar); border-bottom: 1px solid rgba(255,255,255,0.08);">
-        <MudIconButton Icon="@Icons.Material.Rounded.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+    <MudAppBar Elevation="0" Style="background: white; border-bottom: 1px solid #E5E7EB;">
+        <MudIconButton Icon="@Icons.Material.Rounded.Menu" Style="color: #6B7280;" Edge="Edge.Start" OnClick="@ToggleDrawer" />
         <div class="d-flex align-center ml-2" style="gap: 10px;">
-            <MudIcon Icon="@Icons.Material.Rounded.AutoStories" Style="font-size: 1.5rem; color: #818CF8;" />
-            <MudText Typo="Typo.h6" Style="font-weight: 700; letter-spacing: -0.025em; color: white;">
+            <div style="width: 32px; height: 32px; border-radius: 10px; background: linear-gradient(135deg, #10B981, #059669); display: flex; align-items: center; justify-content: center;">
+                <MudIcon Icon="@Icons.Material.Rounded.AutoStories" Style="font-size: 1.125rem; color: white;" />
+            </div>
+            <MudText Style="font-size: 1.125rem; font-weight: 700; letter-spacing: -0.025em; color: #111827;">
                 Local Docs
             </MudText>
         </div>
@@ -15,13 +17,13 @@
         <AuthorizeView>
             <Authorized>
                 <div class="d-flex align-center" style="gap: 8px;">
-                    <MudAvatar Size="Size.Small" Style="background: rgba(99, 102, 241, 0.2); color: #818CF8; font-size: 0.75rem; width: 32px; height: 32px;">
+                    <MudAvatar Size="Size.Small" Style="background: #D1FAE5; color: #059669; font-size: 0.75rem; font-weight: 600; width: 32px; height: 32px;">
                         @(context.User.Identity?.Name?.Substring(0, 1).ToUpper() ?? "U")
                     </MudAvatar>
-                    <MudText Style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">@context.User.Identity?.Name</MudText>
+                    <MudText Style="color: #6B7280; font-size: 0.875rem; font-weight: 500;">@context.User.Identity?.Name</MudText>
                     <MudTooltip Text="Logout">
                         <MudIconButton Icon="@Icons.Material.Rounded.Logout" 
-                                       Style="color: rgba(255,255,255,0.5);" 
+                                       Style="color: #9CA3AF;" 
                                        Size="Size.Small"
                                        Href="/logout" />
                     </MudTooltip>
@@ -31,11 +33,11 @@
     </MudAppBar>
     
     <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0"
-               Style="background: var(--ld-drawer); border-right: 1px solid rgba(255,255,255,0.06);">
+               Style="background: white; border-right: 1px solid #E5E7EB;">
         <NavMenu />
     </MudDrawer>
     
-    <MudMainContent Style="padding-top: 72px; padding-left: 8px; padding-right: 8px; background: var(--ld-background);">
+    <MudMainContent Style="padding-top: 72px; padding-left: 8px; padding-right: 8px; background: #F9FAFB;">
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
             @Body
         </MudContainer>
@@ -55,32 +57,32 @@
     {
         PaletteLight = new PaletteLight
         {
-            Primary = "#6366F1",
-            PrimaryDarken = "#4F46E5",
-            PrimaryLighten = "#818CF8",
-            Secondary = "#64748B",
-            Tertiary = "#818CF8",
-            Info = "#3B82F6",
-            Success = "#22C55E",
+            Primary = "#10B981",
+            PrimaryDarken = "#059669",
+            PrimaryLighten = "#34D399",
+            Secondary = "#6B7280",
+            Tertiary = "#0EA5E9",
+            Info = "#0EA5E9",
+            Success = "#10B981",
             Warning = "#F59E0B",
             Error = "#EF4444",
-            AppbarBackground = "#0F172A",
-            AppbarText = "#FFFFFF",
-            Background = "#F8FAFC",
+            AppbarBackground = "#FFFFFF",
+            AppbarText = "#111827",
+            Background = "#F9FAFB",
             Surface = "#FFFFFF",
-            DrawerBackground = "#1E293B",
-            DrawerText = "#B0BEC5",
-            DrawerIcon = "#78909C",
-            TextPrimary = "#0F172A",
-            TextSecondary = "#64748B",
-            TextDisabled = "#94A3B8",
-            ActionDefault = "#64748B",
-            ActionDisabled = "#CBD5E1",
-            Divider = "#E2E8F0",
-            DividerLight = "#F1F5F9",
-            LinesDefault = "#E2E8F0",
-            TableHover = "#EEF2FF",
-            TableStriped = "#F8FAFC"
+            DrawerBackground = "#FFFFFF",
+            DrawerText = "#374151",
+            DrawerIcon = "#6B7280",
+            TextPrimary = "#111827",
+            TextSecondary = "#6B7280",
+            TextDisabled = "#9CA3AF",
+            ActionDefault = "#6B7280",
+            ActionDisabled = "#D1D5DB",
+            Divider = "#E5E7EB",
+            DividerLight = "#F3F4F6",
+            LinesDefault = "#E5E7EB",
+            TableHover = "#ECFDF5",
+            TableStriped = "#F9FAFB"
         },
         Typography = new Typography
         {
@@ -144,31 +146,31 @@
             Elevation =
             [
                 "none",
-                "0 1px 2px rgba(15,23,42,0.04)",
-                "0 2px 8px rgba(15,23,42,0.06)",
-                "0 4px 12px rgba(15,23,42,0.06)",
-                "0 6px 16px rgba(15,23,42,0.08)",
-                "0 8px 24px rgba(15,23,42,0.08)",
-                "0 12px 32px rgba(15,23,42,0.1)",
-                "0 16px 40px rgba(15,23,42,0.1)",
-                "0 20px 48px rgba(15,23,42,0.12)",
-                "0 24px 56px rgba(15,23,42,0.12)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)",
-                "0 28px 64px rgba(15,23,42,0.14)"
+                "0 1px 2px rgba(0,0,0,0.03)",
+                "0 1px 3px rgba(0,0,0,0.04)",
+                "0 4px 6px -1px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)",
+                "0 10px 15px -3px rgba(0,0,0,0.05)"
             ]
         }
     };

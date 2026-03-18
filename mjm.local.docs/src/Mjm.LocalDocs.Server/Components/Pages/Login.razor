@@ -7,23 +7,23 @@
 
 <div class="login-wrapper">
     <div class="login-card">
-        @* Logo & Branding *@
+        @* Logo *@
         <div class="login-header">
             <div class="login-logo">
                 <MudIcon Icon="@Icons.Material.Rounded.AutoStories" Style="font-size: 1.75rem; color: white;" />
             </div>
-            <MudText Style="font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary);">
+            <MudText Style="font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; color: #111827;">
                 Local Docs
             </MudText>
-            <MudText Style="font-size: 0.875rem; color: var(--ld-text-secondary); margin-top: 4px;">
+            <MudText Style="font-size: 0.875rem; color: #6B7280; margin-top: 4px;">
                 Sign in to your account
             </MudText>
         </div>
 
         @if (_showError)
         {
-            <MudAlert Severity="Severity.Error" Class="mb-4" Dense="true" ShowCloseIcon="true" CloseIconClicked="@(() => _showError = false)"
-                      Style="border-radius: 10px;">
+            <MudAlert Severity="Severity.Error" Class="mb-4" Dense="true" ShowCloseIcon="true" 
+                      CloseIconClicked="@(() => _showError = false)" Variant="Variant.Outlined">
                 Invalid credentials. Please try again.
             </MudAlert>
         }
@@ -74,13 +74,13 @@
                        Color="Color.Primary"
                        FullWidth="true"
                        Size="Size.Large"
-                       Style="height: 48px; font-weight: 600; font-size: 0.9375rem; letter-spacing: 0; border-radius: 10px;">
+                       Style="height: 48px; font-weight: 600; font-size: 0.9375rem; border-radius: 10px;">
                 Sign In
             </MudButton>
         </form>
     </div>
 
-    <MudText Style="font-size: 0.75rem; color: var(--ld-text-muted); margin-top: 32px;">
+    <MudText Style="font-size: 0.75rem; color: #9CA3AF; margin-top: 32px;">
         Local Docs &mdash; Semantic Document Search
     </MudText>
 </div>
@@ -93,7 +93,7 @@
         align-items: center;
         justify-content: center;
         padding: 24px;
-        background: linear-gradient(160deg, #F8FAFC 0%, #EEF2FF 50%, #F8FAFC 100%);
+        background: linear-gradient(160deg, #F9FAFB 0%, #ECFDF5 40%, #F0FDF4 60%, #F9FAFB 100%);
     }
 
     .login-card {
@@ -102,8 +102,8 @@
         background: white;
         border-radius: 16px;
         padding: 40px 36px 36px 36px;
-        border: 1px solid var(--ld-border);
-        box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+        border: 1px solid #E5E7EB;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
     }
 
     .login-header {
@@ -115,12 +115,12 @@
         width: 52px;
         height: 52px;
         border-radius: 14px;
-        background: linear-gradient(135deg, #6366F1, #4F46E5);
+        background: linear-gradient(135deg, #10B981, #059669);
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto 16px auto;
-        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
     }
 
     @@media (max-width: 480px) {

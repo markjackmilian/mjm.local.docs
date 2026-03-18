@@ -33,17 +33,16 @@
  }
  else if (_projects.Count == 0)
  {
-     <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center" 
-               Style="border: 1px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center;">
+     <div class="ld-empty-state">
          <MudIcon Icon="@Icons.Material.Rounded.FolderOff" 
-                  Style="font-size: 3rem; color: var(--ld-text-muted); margin-bottom: 12px;" />
-         <MudText Style="font-size: 0.9375rem; font-weight: 500; color: var(--ld-text-primary); margin-bottom: 4px;">
+                  Style="font-size: 3rem; color: #D1D5DB; margin-bottom: 12px;" />
+         <MudText Style="font-size: 0.9375rem; font-weight: 600; color: #111827; margin-bottom: 4px;">
              No projects found
          </MudText>
-         <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+         <MudText Style="font-size: 0.8125rem; color: #6B7280;">
              Click "New Project" to create one.
          </MudText>
-     </MudPaper>
+     </div>
  }
  else
  {
@@ -89,7 +88,7 @@
                      <CellTemplate>
                          <MudChip T="string" Size="Size.Small" 
                                   Variant="Variant.Text"
-                                  Style="background: var(--ld-primary-lightest); color: var(--ld-primary);">
+                                  Style="background: #ECFDF5; color: #059669; font-weight: 600;">
                              @context.Item.DocumentCount
                          </MudChip>
                      </CellTemplate>
