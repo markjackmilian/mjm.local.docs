@@ -10,12 +10,14 @@
 
 <PageTitle>MCP Configuration - Local Docs</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-2">MCP Configuration</MudText>
-<MudText Typo="Typo.body1" Class="mb-4 mud-text-secondary">
-    Configure your AI coding assistant to connect to the Local Docs MCP server.
-</MudText>
+<div class="mb-6">
+    <MudText Typo="Typo.h4" Class="ld-heading">MCP Configuration</MudText>
+    <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
+        Configure your AI coding assistant to connect to the Local Docs MCP server.
+    </MudText>
+</div>
 
-<MudAlert Severity="Severity.Info" Class="mb-4">
+<MudAlert Severity="Severity.Info" Class="mb-4" Variant="Variant.Outlined" Dense="true">
     <MudText Typo="Typo.body2">
         Make sure the Local Docs server is running at <code>@ServerUrl</code> before configuring your client.
     </MudText>
@@ -23,176 +25,154 @@
 
 @if (McpOptions.Value.RequireAuthentication)
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4">
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Variant="Variant.Outlined" Dense="true">
         <MudText Typo="Typo.body2">
-            <strong>Authentication Required:</strong> The MCP server requires a Bearer token for authentication.
+            <strong>Authentication Required:</strong> The MCP server requires a Bearer token.
             <MudLink Href="/settings/tokens" Typo="Typo.body2">Create an API Token</MudLink> and add it to the configuration.
         </MudText>
     </MudAlert>
 }
 
-<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
-    <MudTabPanel Text="Claude Code" Icon="@Icons.Material.Filled.Terminal">
-        <MudText Typo="Typo.h6" Class="mb-3">Claude Code Configuration</MudText>
-        
-        <MudText Typo="Typo.body1" Class="mb-4">
-            Claude Code is Anthropic's official CLI for Claude. You can configure it to use Local Docs MCP server
-            using either the CLI command or a JSON configuration file.
-        </MudText>
+<MudPaper Elevation="0" Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); overflow: hidden;">
+    <MudTabs Elevation="0" Rounded="false" ApplyEffectsToContainer="true" PanelClass="pa-5" 
+             SliderColor="Color.Primary" Color="Color.Transparent">
+        <MudTabPanel Text="Claude Code" Icon="@Icons.Material.Rounded.Terminal">
+            <MudText Typo="Typo.h6" Class="mb-3">Claude Code Configuration</MudText>
+            
+            <MudText Typo="Typo.body2" Class="mb-5" Style="color: var(--ld-text-secondary);">
+                Claude Code is Anthropic's official CLI for Claude. Configure it using the CLI command or JSON configuration.
+            </MudText>
 
-        @* Option 1: CLI Command *@
-        <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-            <div class="d-flex justify-space-between align-center mb-2">
-                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
-                    Option 1: CLI Command (Recommended)
-                </MudText>
-                <MudTooltip Text="Copy to clipboard">
-                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" 
+            @* CLI Command *@
+            <div class="mb-5">
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <p class="ld-section-title" style="margin: 0;">CLI COMMAND (RECOMMENDED)</p>
+                    <MudIconButton Icon="@Icons.Material.Rounded.ContentCopy" 
                                    Size="Size.Small" 
+                                   Style="color: var(--ld-text-muted);"
                                    OnClick="@(() => CopyToClipboardAsync(ClaudeCliCommand))" />
-                </MudTooltip>
-            </div>
-            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
-                Run this command in your terminal to add the Local Docs MCP server:
-            </MudText>
-            <pre class="code-block">@ClaudeCliCommand</pre>
-        </MudPaper>
-
-        @* Option 2: JSON Configuration *@
-        <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-            <div class="d-flex justify-space-between align-center mb-2">
-                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
-                    Option 2: JSON Configuration
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-2" Style="color: var(--ld-text-secondary);">
+                    Run this command in your terminal:
                 </MudText>
-                <MudTooltip Text="Copy to clipboard">
-                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" 
+                <pre class="ld-code-block">@ClaudeCliCommand</pre>
+            </div>
+
+            @* JSON Configuration *@
+            <div class="mb-5">
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <p class="ld-section-title" style="margin: 0;">JSON CONFIGURATION</p>
+                    <MudIconButton Icon="@Icons.Material.Rounded.ContentCopy" 
                                    Size="Size.Small" 
+                                   Style="color: var(--ld-text-muted);"
                                    OnClick="@(() => CopyToClipboardAsync(ClaudeJsonConfig))" />
-                </MudTooltip>
-            </div>
-            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
-                Add this configuration to <code>.mcp.json</code> in your project root, or to <code>~/.claude.json</code> for global access:
-            </MudText>
-            <pre class="code-block">@ClaudeJsonConfig</pre>
-        </MudPaper>
-
-        @* Verification Steps *@
-        <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2">Verification Steps</MudText>
-        <MudList T="string" Dense="true">
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                Run <code>claude mcp list</code> to verify the server is registered
-            </MudListItem>
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                In Claude Code, use <code>/mcp</code> to check the connection status
-            </MudListItem>
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                Try asking Claude to search your documents using Local Docs
-            </MudListItem>
-        </MudList>
-
-        <MudAlert Severity="Severity.Warning" Class="mt-4">
-            <MudText Typo="Typo.body2">
-                <strong>Note:</strong> The <code>local</code> scope (default) makes the server available only in the current project.
-                Use <code>--scope user</code> to make it available across all projects.
-            </MudText>
-        </MudAlert>
-    </MudTabPanel>
-
-    <MudTabPanel Text="OpenCode" Icon="@Icons.Material.Filled.Code">
-        <MudText Typo="Typo.h6" Class="mb-3">OpenCode Configuration</MudText>
-        
-        <MudText Typo="Typo.body1" Class="mb-4">
-            OpenCode is an open source AI coding agent available as a terminal-based interface, desktop app, or IDE extension.
-            Configure it by adding the MCP server to your <code>opencode.json</code> file.
-        </MudText>
-
-        @* JSON Configuration *@
-        <MudPaper Class="pa-4 mb-4" Elevation="0" Style="background-color: var(--mud-palette-background-gray);">
-            <div class="d-flex justify-space-between align-center mb-2">
-                <MudText Typo="Typo.subtitle1" Class="font-weight-bold">
-                    Configuration File
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-2" Style="color: var(--ld-text-secondary);">
+                    Add to <code>.mcp.json</code> in your project root, or <code>~/.claude.json</code> for global access:
                 </MudText>
-                <MudTooltip Text="Copy to clipboard">
-                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" 
-                                   Size="Size.Small" 
-                                   OnClick="@(() => CopyToClipboardAsync(OpenCodeJsonConfig))" />
-                </MudTooltip>
+                <pre class="ld-code-block">@ClaudeJsonConfig</pre>
             </div>
-            <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
-                Add this to your <code>opencode.json</code> or <code>opencode.jsonc</code> in your project root:
+
+            @* Verification *@
+            <p class="ld-section-title">VERIFICATION</p>
+            <MudList T="string" Dense="true">
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    Run <code>claude mcp list</code> to verify the server is registered
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    In Claude Code, use <code>/mcp</code> to check the connection status
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    Try asking Claude to search your documents using Local Docs
+                </MudListItem>
+            </MudList>
+
+            <MudAlert Severity="Severity.Warning" Class="mt-4" Variant="Variant.Outlined" Dense="true">
+                <MudText Typo="Typo.body2">
+                    The <code>local</code> scope (default) makes the server available only in the current project.
+                    Use <code>--scope user</code> to make it available globally.
+                </MudText>
+            </MudAlert>
+        </MudTabPanel>
+
+        <MudTabPanel Text="OpenCode" Icon="@Icons.Material.Rounded.Code">
+            <MudText Typo="Typo.h6" Class="mb-3">OpenCode Configuration</MudText>
+            
+            <MudText Typo="Typo.body2" Class="mb-5" Style="color: var(--ld-text-secondary);">
+                OpenCode is an open source AI coding agent. Add the MCP server to your <code>opencode.json</code> file.
             </MudText>
-            <pre class="code-block">@OpenCodeJsonConfig</pre>
-        </MudPaper>
 
-        @* Verification Steps *@
-        <MudText Typo="Typo.subtitle1" Class="font-weight-bold mb-2">Verification Steps</MudText>
-        <MudList T="string" Dense="true">
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                Run <code>opencode mcp list</code> to verify the server is registered
-            </MudListItem>
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                Restart OpenCode to load the new configuration
-            </MudListItem>
-            <MudListItem Icon="@Icons.Material.Filled.CheckCircle" IconColor="Color.Success">
-                In your prompts, add <code>use local-docs</code> to use the MCP tools
-            </MudListItem>
-        </MudList>
+            @* JSON Configuration *@
+            <div class="mb-5">
+                <div class="d-flex justify-space-between align-center mb-2">
+                    <p class="ld-section-title" style="margin: 0;">CONFIGURATION FILE</p>
+                    <MudIconButton Icon="@Icons.Material.Rounded.ContentCopy" 
+                                   Size="Size.Small" 
+                                   Style="color: var(--ld-text-muted);"
+                                   OnClick="@(() => CopyToClipboardAsync(OpenCodeJsonConfig))" />
+                </div>
+                <MudText Typo="Typo.body2" Class="mb-2" Style="color: var(--ld-text-secondary);">
+                    Add to your <code>opencode.json</code> or <code>opencode.jsonc</code> in your project root:
+                </MudText>
+                <pre class="ld-code-block">@OpenCodeJsonConfig</pre>
+            </div>
 
-        <MudAlert Severity="Severity.Info" Class="mt-4">
-            <MudText Typo="Typo.body2">
-                <strong>Tip:</strong> You can add a rule to your <code>AGENTS.md</code> file: 
-                <em>"When you need to search documents, use the local-docs MCP tools."</em>
-            </MudText>
-        </MudAlert>
-    </MudTabPanel>
-</MudTabs>
+            @* Verification *@
+            <p class="ld-section-title">VERIFICATION</p>
+            <MudList T="string" Dense="true">
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    Run <code>opencode mcp list</code> to verify the server is registered
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    Restart OpenCode to load the new configuration
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Rounded.CheckCircleOutline" IconColor="Color.Success">
+                    In your prompts, add <code>use local-docs</code> to use the MCP tools
+                </MudListItem>
+            </MudList>
 
-@* Available Tools Section *@
-<MudPaper Class="pa-4 mt-4" Elevation="2">
-    <MudText Typo="Typo.h6" Class="mb-3">Available MCP Tools</MudText>
-    <MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+            <MudAlert Severity="Severity.Info" Class="mt-4" Variant="Variant.Outlined" Dense="true">
+                <MudText Typo="Typo.body2">
+                    <strong>Tip:</strong> Add a rule to your <code>AGENTS.md</code>: 
+                    <em>"When you need to search documents, use the local-docs MCP tools."</em>
+                </MudText>
+            </MudAlert>
+        </MudTabPanel>
+    </MudTabs>
+</MudPaper>
+
+@* Available Tools *@
+<MudPaper Class="pa-5 mt-5" Elevation="0" Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg);">
+    <p class="ld-section-title">AVAILABLE MCP TOOLS</p>
+    <MudText Typo="Typo.body2" Class="mb-4" Style="color: var(--ld-text-secondary);">
         Once connected, the following tools will be available to your AI assistant:
     </MudText>
     
-    <MudSimpleTable Dense="true" Hover="true" Bordered="true">
-        <thead>
-            <tr>
-                <th>Tool</th>
-                <th>Description</th>
-            </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td><code>search_docs</code></td>
-                <td>Search for documents using semantic search across all projects</td>
-            </tr>
-            <tr>
-                <td><code>list_projects</code></td>
-                <td>List all available projects in Local Docs</td>
-            </tr>
-            <tr>
-                <td><code>add_document</code></td>
-                <td>Add a new document to a project</td>
-            </tr>
-        </tbody>
-    </MudSimpleTable>
+    <div style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-md); overflow: hidden;">
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead>
+                <tr>
+                    <th>Tool</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code style="background: var(--ld-primary-lightest); color: var(--ld-primary); padding: 2px 8px; border-radius: 4px; font-size: 0.8125rem;">search_docs</code></td>
+                    <td>Search for documents using semantic search across all projects</td>
+                </tr>
+                <tr>
+                    <td><code style="background: var(--ld-primary-lightest); color: var(--ld-primary); padding: 2px 8px; border-radius: 4px; font-size: 0.8125rem;">list_projects</code></td>
+                    <td>List all available projects in Local Docs</td>
+                </tr>
+                <tr>
+                    <td><code style="background: var(--ld-primary-lightest); color: var(--ld-primary); padding: 2px 8px; border-radius: 4px; font-size: 0.8125rem;">add_document</code></td>
+                    <td>Add a new document to a project</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </div>
 </MudPaper>
-
-<style>
-    .code-block {
-        background-color: var(--mud-palette-surface);
-        border: 1px solid var(--mud-palette-lines-default);
-        border-radius: 4px;
-        padding: 12px;
-        overflow-x: auto;
-        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-        font-size: 0.875rem;
-        line-height: 1.5;
-        margin: 0;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-</style>
 
 @code {
     private string ServerUrl => $"{Navigation.BaseUri.TrimEnd('/')}/mcp";

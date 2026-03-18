@@ -11,11 +11,17 @@
 
  <PageTitle>Projects - Local Docs</PageTitle>
 
- <div class="d-flex justify-space-between align-center mb-4">
-     <MudText Typo="Typo.h4">Projects</MudText>
+ <div class="d-flex justify-space-between align-center mb-6">
+     <div>
+         <MudText Typo="Typo.h4" Class="ld-heading">Projects</MudText>
+         <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
+             Manage your document collections
+         </MudText>
+     </div>
      <MudButton Variant="Variant.Filled" 
                 Color="Color.Primary" 
-                StartIcon="@Icons.Material.Filled.Add"
+                StartIcon="@Icons.Material.Rounded.Add"
+                Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                 OnClick="@(() => Navigation.NavigateTo("/projects/new"))">
          New Project
      </MudButton>
@@ -27,74 +33,95 @@
  }
  else if (_projects.Count == 0)
  {
-     <MudAlert Severity="Severity.Info">
-         No projects found. Click "New Project" to create one.
-     </MudAlert>
+     <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center" 
+               Style="border: 1px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center;">
+         <MudIcon Icon="@Icons.Material.Rounded.FolderOff" 
+                  Style="font-size: 3rem; color: var(--ld-text-muted); margin-bottom: 12px;" />
+         <MudText Style="font-size: 0.9375rem; font-weight: 500; color: var(--ld-text-primary); margin-bottom: 4px;">
+             No projects found
+         </MudText>
+         <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+             Click "New Project" to create one.
+         </MudText>
+     </MudPaper>
  }
  else
  {
      <MudTextField @bind-Value="_searchText"
                    Placeholder="Search projects..."
                    Adornment="Adornment.Start"
-                   AdornmentIcon="@Icons.Material.Filled.Search"
+                   AdornmentIcon="@Icons.Material.Rounded.Search"
                    Immediate="true"
                    DebounceInterval="300"
                    Variant="Variant.Outlined"
                    Class="mb-4"
+                   Style="max-width: 400px;"
                    Clearable="true"
                    OnClearButtonClick="@(() => { _searchText = string.Empty; })" />
 
-     <MudDataGrid T="ProjectListItem"
-                  Items="@FilteredProjects"
-                  SortMode="SortMode.Single"
-                  Filterable="false"
-                  Hideable="false"
-                  Dense="false"
-                  Striped="true"
-                  Hover="true">
-         <Columns>
-             <TemplateColumn Title="Name" Sortable="true">
-                 <CellTemplate>
-                     <MudLink Href="@($"/projects/{context.Item.Project.Id}")" Typo="Typo.body1" Color="Color.Primary">
-                         @context.Item.Project.Name
-                     </MudLink>
-                 </CellTemplate>
-             </TemplateColumn>
-             <TemplateColumn Title="Description" Sortable="true">
-                 <CellTemplate>
-                     <MudText Typo="Typo.body2" Style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                         @(context.Item.Project.Description ?? "-")
-                     </MudText>
-                 </CellTemplate>
-             </TemplateColumn>
-             <TemplateColumn Title="Documents" Sortable="true">
-                 <CellTemplate>
-                     <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.Item.DocumentCount</MudChip>
-                 </CellTemplate>
-             </TemplateColumn>
-             <TemplateColumn Title="Created" Sortable="true">
-                 <CellTemplate>
-                     <MudText Typo="Typo.body2">@context.Item.Project.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</MudText>
-                 </CellTemplate>
-             </TemplateColumn>
-             <TemplateColumn Title="Actions" Sortable="false">
-                 <CellTemplate>
-                     <MudTooltip Text="Edit">
-                         <MudIconButton Icon="@Icons.Material.Filled.Edit" 
-                                        Size="Size.Small" 
-                                        Color="Color.Primary"
-                                        OnClick="@(() => Navigation.NavigateTo($"/projects/{context.Item.Project.Id}"))" />
-                     </MudTooltip>
-                     <MudTooltip Text="Delete">
-                         <MudIconButton Icon="@Icons.Material.Filled.Delete" 
-                                        Size="Size.Small" 
-                                        Color="Color.Error"
-                                        OnClick="@(() => DeleteProjectAsync(context.Item.Project))" />
-                     </MudTooltip>
-                 </CellTemplate>
-             </TemplateColumn>
-         </Columns>
-     </MudDataGrid>
+     <MudPaper Elevation="0" Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); overflow: hidden;">
+         <MudDataGrid T="ProjectListItem"
+                      Items="@FilteredProjects"
+                      SortMode="SortMode.Single"
+                      Filterable="false"
+                      Hideable="false"
+                      Dense="false"
+                      Hover="true">
+             <Columns>
+                 <TemplateColumn Title="Name" Sortable="true">
+                     <CellTemplate>
+                         <MudLink Href="@($"/projects/{context.Item.Project.Id}")" 
+                                  Typo="Typo.body2" 
+                                  Color="Color.Primary"
+                                  Style="font-weight: 600;">
+                             @context.Item.Project.Name
+                         </MudLink>
+                     </CellTemplate>
+                 </TemplateColumn>
+                 <TemplateColumn Title="Description" Sortable="true">
+                     <CellTemplate>
+                         <MudText Typo="Typo.body2" Style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ld-text-secondary);">
+                             @(context.Item.Project.Description ?? "-")
+                         </MudText>
+                     </CellTemplate>
+                 </TemplateColumn>
+                 <TemplateColumn Title="Documents" Sortable="true">
+                     <CellTemplate>
+                         <MudChip T="string" Size="Size.Small" 
+                                  Variant="Variant.Text"
+                                  Style="background: var(--ld-primary-lightest); color: var(--ld-primary);">
+                             @context.Item.DocumentCount
+                         </MudChip>
+                     </CellTemplate>
+                 </TemplateColumn>
+                 <TemplateColumn Title="Created" Sortable="true">
+                     <CellTemplate>
+                         <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                             @context.Item.Project.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")
+                         </MudText>
+                     </CellTemplate>
+                 </TemplateColumn>
+                 <TemplateColumn Title="Actions" Sortable="false">
+                     <CellTemplate>
+                         <div class="d-flex" style="gap: 2px;">
+                             <MudTooltip Text="Edit">
+                                 <MudIconButton Icon="@Icons.Material.Rounded.Edit" 
+                                                Size="Size.Small" 
+                                                Color="Color.Primary"
+                                                OnClick="@(() => Navigation.NavigateTo($"/projects/{context.Item.Project.Id}"))" />
+                             </MudTooltip>
+                             <MudTooltip Text="Delete">
+                                 <MudIconButton Icon="@Icons.Material.Rounded.DeleteOutline" 
+                                                Size="Size.Small" 
+                                                Color="Color.Error"
+                                                OnClick="@(() => DeleteProjectAsync(context.Item.Project))" />
+                             </MudTooltip>
+                         </div>
+                     </CellTemplate>
+                 </TemplateColumn>
+             </Columns>
+         </MudDataGrid>
+     </MudPaper>
  }
 
  @code {

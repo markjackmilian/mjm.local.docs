@@ -3,7 +3,7 @@
 
 <MudDialog>
     <DialogContent>
-        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true" Variant="Variant.Outlined">
             Create a know how document. The content will be indexed for semantic search.
         </MudAlert>
 
@@ -31,13 +31,13 @@
                           Class="mb-2"
                           Immediate="true" />
 
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            <MudText Typo="Typo.caption" Style="color: var(--ld-text-muted);">
                 Supports Markdown formatting. The document will be saved as a .md file.
             </MudText>
         </EditForm>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_saving">Cancel</MudButton>
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_saving" Style="color: var(--ld-text-secondary);">Cancel</MudButton>
         <MudButton OnClick="Submit"
                    Variant="Variant.Filled"
                    Color="Color.Primary"

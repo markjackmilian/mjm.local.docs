@@ -11,16 +11,17 @@
 
 <PageTitle>API Tokens - Local Docs</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
+<div class="d-flex justify-space-between align-center mb-6">
     <div>
-        <MudText Typo="Typo.h4">API Tokens</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        <MudText Typo="Typo.h4" Class="ld-heading">API Tokens</MudText>
+        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
             Manage authentication tokens for the MCP server
         </MudText>
     </div>
     <MudButton Variant="Variant.Filled"
                Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add"
+               StartIcon="@Icons.Material.Rounded.Add"
+               Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                OnClick="OpenCreateDialogAsync">
         New Token
     </MudButton>
@@ -28,11 +29,9 @@
 
 @if (!McpOptions.Value.RequireAuthentication)
 {
-    <MudAlert Severity="Severity.Warning" Class="mb-4">
+    <MudAlert Severity="Severity.Warning" Class="mb-4" Variant="Variant.Outlined" Dense="true">
         <MudText Typo="Typo.body2">
-            <strong>Warning:</strong> MCP authentication is disabled.
-            Tokens will not be required to access the MCP endpoint.
-            To enable authentication, set <code>LocalDocs:Mcp:RequireAuthentication</code> to <code>true</code> in appsettings.json.
+            MCP authentication is disabled. To enable, set <code>LocalDocs:Mcp:RequireAuthentication</code> to <code>true</code>.
         </MudText>
     </MudAlert>
 }
@@ -43,96 +42,113 @@
 }
 else if (_tokens.Count == 0)
 {
-    <MudAlert Severity="Severity.Info">
-        No tokens configured. Click "New Token" to create one.
-    </MudAlert>
+    <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center" 
+              Style="border: 1px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center;">
+        <MudIcon Icon="@Icons.Material.Rounded.VpnKey" 
+                 Style="font-size: 3rem; color: var(--ld-text-muted); margin-bottom: 12px;" />
+        <MudText Style="font-size: 0.9375rem; font-weight: 500; color: var(--ld-text-primary); margin-bottom: 4px;">
+            No tokens configured
+        </MudText>
+        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+            Click "New Token" to create one.
+        </MudText>
+    </MudPaper>
 }
 else
 {
-    <MudDataGrid T="ApiToken"
-                 Items="@_tokens"
-                 SortMode="SortMode.Single"
-                 Filterable="false"
-                 Hideable="false"
-                 Dense="false"
-                 Striped="true"
-                 Hover="true">
-        <Columns>
-            <PropertyColumn Property="x => x.Name" Title="Name" Sortable="true" />
-            <TemplateColumn Title="Prefix" Sortable="false">
-                <CellTemplate>
-                    <MudText Typo="Typo.body2">
-                        <code>@(context.Item.TokenPrefix ?? "-")...</code>
-                    </MudText>
-                </CellTemplate>
-            </TemplateColumn>
-            <TemplateColumn Title="Status" Sortable="true">
-                <CellTemplate>
-                    @if (context.Item.IsRevoked)
-                    {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Revoked</MudChip>
-                    }
-                    else if (context.Item.ExpiresAt.HasValue && context.Item.ExpiresAt.Value < DateTimeOffset.UtcNow)
-                    {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Expired</MudChip>
-                    }
-                    else
-                    {
-                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip>
-                    }
-                </CellTemplate>
-            </TemplateColumn>
-            <TemplateColumn Title="Created" Sortable="true">
-                <CellTemplate>
-                    <MudText Typo="Typo.body2">@context.Item.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</MudText>
-                </CellTemplate>
-            </TemplateColumn>
-            <TemplateColumn Title="Expiry" Sortable="true">
-                <CellTemplate>
-                    <MudText Typo="Typo.body2">
-                        @(context.Item.ExpiresAt?.LocalDateTime.ToString("dd/MM/yyyy HH:mm") ?? "Never")
-                    </MudText>
-                </CellTemplate>
-            </TemplateColumn>
-            <TemplateColumn Title="Last Used" Sortable="true">
-                <CellTemplate>
-                    <MudText Typo="Typo.body2">
-                        @(context.Item.LastUsedAt?.LocalDateTime.ToString("dd/MM/yyyy HH:mm") ?? "Never")
-                    </MudText>
-                </CellTemplate>
-            </TemplateColumn>
-            <TemplateColumn Title="Actions" Sortable="false">
-                <CellTemplate>
-                    @if (!context.Item.IsRevoked && context.Item.IsValid)
-                    {
-                        <MudTooltip Text="Revoke">
-                            <MudIconButton Icon="@Icons.Material.Filled.Block"
-                                           Size="Size.Small"
-                                           Color="Color.Warning"
-                                           OnClick="@(() => RevokeTokenAsync(context.Item))" />
-                        </MudTooltip>
-                    }
-                    <MudTooltip Text="Delete">
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
-                                       Size="Size.Small"
-                                       Color="Color.Error"
-                                       OnClick="@(() => DeleteTokenAsync(context.Item))" />
-                    </MudTooltip>
-                </CellTemplate>
-            </TemplateColumn>
-        </Columns>
-    </MudDataGrid>
+    <MudPaper Elevation="0" Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); overflow: hidden;">
+        <MudDataGrid T="ApiToken"
+                     Items="@_tokens"
+                     SortMode="SortMode.Single"
+                     Filterable="false"
+                     Hideable="false"
+                     Dense="false"
+                     Hover="true">
+            <Columns>
+                <PropertyColumn Property="x => x.Name" Title="Name" Sortable="true">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Style="font-weight: 600;">@context.Item.Name</MudText>
+                    </CellTemplate>
+                </PropertyColumn>
+                <TemplateColumn Title="Prefix" Sortable="false">
+                    <CellTemplate>
+                        <code style="background: var(--ld-background); padding: 2px 8px; border-radius: 4px; font-size: 0.8125rem; color: var(--ld-text-secondary);">
+                            @(context.Item.TokenPrefix ?? "-")...
+                        </code>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Sortable="true">
+                    <CellTemplate>
+                        @if (context.Item.IsRevoked)
+                        {
+                            <MudChip T="string" Size="Size.Small" Style="background: #FEF2F2; color: #991B1B;">Revoked</MudChip>
+                        }
+                        else if (context.Item.ExpiresAt.HasValue && context.Item.ExpiresAt.Value < DateTimeOffset.UtcNow)
+                        {
+                            <MudChip T="string" Size="Size.Small" Style="background: #FEF3C7; color: #92400E;">Expired</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Style="background: #ECFDF5; color: #065F46;">Active</MudChip>
+                        }
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Created" Sortable="true">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                            @context.Item.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Expiry" Sortable="true">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                            @(context.Item.ExpiresAt?.LocalDateTime.ToString("dd/MM/yyyy HH:mm") ?? "Never")
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Last Used" Sortable="true">
+                    <CellTemplate>
+                        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                            @(context.Item.LastUsedAt?.LocalDateTime.ToString("dd/MM/yyyy HH:mm") ?? "Never")
+                        </MudText>
+                    </CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Actions" Sortable="false">
+                    <CellTemplate>
+                        <div class="d-flex" style="gap: 2px;">
+                            @if (!context.Item.IsRevoked && context.Item.IsValid)
+                            {
+                                <MudTooltip Text="Revoke">
+                                    <MudIconButton Icon="@Icons.Material.Rounded.Block"
+                                                   Size="Size.Small"
+                                                   Color="Color.Warning"
+                                                   OnClick="@(() => RevokeTokenAsync(context.Item))" />
+                                </MudTooltip>
+                            }
+                            <MudTooltip Text="Delete">
+                                <MudIconButton Icon="@Icons.Material.Rounded.DeleteOutline"
+                                               Size="Size.Small"
+                                               Color="Color.Error"
+                                               OnClick="@(() => DeleteTokenAsync(context.Item))" />
+                            </MudTooltip>
+                        </div>
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
+    </MudPaper>
 }
 
-@* Dialog per mostrare il token creato *@
+@* Token Created Dialog *@
 <MudDialog @bind-Visible="_showTokenDialog" Options="@(new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Medium, FullWidth = true })">
     <TitleContent>
         <MudText Typo="Typo.h6">Token Created</MudText>
     </TitleContent>
     <DialogContent>
-        <MudAlert Severity="Severity.Warning" Class="mb-4">
+        <MudAlert Severity="Severity.Warning" Class="mb-4" Variant="Variant.Outlined" Dense="true">
             <MudText Typo="Typo.body2">
-                <strong>Important:</strong> Copy this token now. It will no longer be visible after closing this dialog.
+                Copy this token now. It will not be visible after closing this dialog.
             </MudText>
         </MudAlert>
         <MudTextField @bind-Value="_newlyCreatedToken"
@@ -140,12 +156,12 @@ else
                       Variant="Variant.Outlined"
                       ReadOnly="true"
                       Adornment="Adornment.End"
-                      AdornmentIcon="@Icons.Material.Filled.ContentCopy"
+                      AdornmentIcon="@Icons.Material.Rounded.ContentCopy"
                       OnAdornmentClick="CopyTokenToClipboard"
                       FullWidth="true"
                       Class="mb-4" />
-        <MudText Typo="Typo.body2" Class="mud-text-secondary">
-            Use this token in the <code>Authorization: Bearer &lt;token&gt;</code> header to authenticate MCP requests.
+        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+            Use this token in the <code>Authorization: Bearer &lt;token&gt;</code> header.
         </MudText>
     </DialogContent>
     <DialogActions>
@@ -261,8 +277,6 @@ else
 
     private async Task CopyTokenToClipboard()
     {
-        // Note: Clipboard API requires JavaScript interop
-        // For now, show a message that the token can be manually copied
         Snackbar.Add("Select and copy the token manually (Ctrl+C)", Severity.Info);
     }
 

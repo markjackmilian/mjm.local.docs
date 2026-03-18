@@ -2,7 +2,7 @@
 
 <MudThemeProvider Theme="_theme" IsDarkMode="false" />
 
-<MudLayout Style="min-height: 100vh;">
+<MudLayout Style="min-height: 100vh; background: var(--ld-background);">
     <MudMainContent Style="padding: 0; margin: 0;">
         @Body
     </MudMainContent>
@@ -13,13 +13,14 @@
     {
         PaletteLight = new PaletteLight
         {
-            Primary = "#1976D2",
-            Secondary = "#7B1FA2",
-            Tertiary = "#E91E63",
-            Background = "#ffffff",
-            Surface = "#ffffff",
-            TextPrimary = "#424242",
-            TextSecondary = "#757575"
+            Primary = "#6366F1",
+            PrimaryDarken = "#4F46E5",
+            PrimaryLighten = "#818CF8",
+            Secondary = "#64748B",
+            Background = "#F8FAFC",
+            Surface = "#FFFFFF",
+            TextPrimary = "#0F172A",
+            TextSecondary = "#64748B"
         },
         Typography = new Typography
         {
@@ -27,6 +28,10 @@
             {
                 FontFamily = ["Inter", "Roboto", "Helvetica", "Arial", "sans-serif"]
             }
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "12px"
         }
     };
 }

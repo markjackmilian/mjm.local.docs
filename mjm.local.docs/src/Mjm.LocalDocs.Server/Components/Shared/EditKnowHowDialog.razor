@@ -4,14 +4,19 @@
 
 <MudDialog>
     <DialogContent>
-        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true" Variant="Variant.Outlined">
             The current version (v@(Document.VersionNumber)) will be preserved as history.
             Search results will point to the new version.
         </MudAlert>
 
-        <MudText Typo="Typo.body2" Class="mb-4">
-            <strong>Document:</strong> @Document.FileName — <strong>Current version:</strong> v@(Document.VersionNumber)
-        </MudText>
+        <div class="mb-4" style="display: flex; gap: 16px;">
+            <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                <strong style="color: var(--ld-text-primary);">Document:</strong> @Document.FileName
+            </MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                <strong style="color: var(--ld-text-primary);">Version:</strong> v@(Document.VersionNumber)
+            </MudText>
+        </div>
 
         <EditForm Model="@_model" OnValidSubmit="Submit">
             <DataAnnotationsValidator />
@@ -35,13 +40,13 @@
                           Class="mb-2"
                           Immediate="true" />
 
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            <MudText Typo="Typo.caption" Style="color: var(--ld-text-muted);">
                 Supports Markdown formatting. Editing will create a new version (v@(Document.VersionNumber + 1)).
             </MudText>
         </EditForm>
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_saving">Cancel</MudButton>
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_saving" Style="color: var(--ld-text-secondary);">Cancel</MudButton>
         <MudButton OnClick="Submit"
                    Variant="Variant.Filled"
                    Color="Color.Primary"
