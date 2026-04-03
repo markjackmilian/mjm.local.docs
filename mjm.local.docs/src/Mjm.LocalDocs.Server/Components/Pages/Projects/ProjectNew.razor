@@ -12,9 +12,15 @@
 
 <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 px-0" />
 
-<MudText Typo="Typo.h4" Class="mb-4">New Project</MudText>
+<div class="mb-6">
+    <MudText Typo="Typo.h4" Class="ld-heading">New Project</MudText>
+    <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
+        Create a new document collection
+    </MudText>
+</div>
 
-<MudPaper Class="pa-6" Elevation="2" MaxWidth="600px">
+<MudPaper Class="pa-6" Elevation="0" MaxWidth="560px"
+          Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg);">
     <EditForm Model="@_model" OnValidSubmit="CreateProjectAsync">
         <DataAnnotationsValidator />
         
@@ -32,17 +38,18 @@
         <MudTextField @bind-Value="_model.Description"
                       Label="Description"
                       Variant="Variant.Outlined"
-                      Class="mb-4"
+                      Class="mb-6"
                       Lines="3"
                       MaxLength="500"
                       HelperText="Optional description for the project" />
         
-        <div class="d-flex gap-3 mt-4">
+        <div class="d-flex" style="gap: 12px;">
             <MudButton ButtonType="ButtonType.Submit"
                        Variant="Variant.Filled"
                        Color="Color.Primary"
                        Disabled="@_saving"
-                       StartIcon="@Icons.Material.Filled.Save">
+                       StartIcon="@Icons.Material.Rounded.Save"
+                       Style="border-radius: var(--ld-radius-sm);">
                 @if (_saving)
                 {
                     <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
@@ -57,7 +64,8 @@
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Default"
                        OnClick="@(() => Navigation.NavigateTo("/projects"))"
-                       Disabled="@_saving">
+                       Disabled="@_saving"
+                       Style="border-radius: var(--ld-radius-sm);">
                 Cancel
             </MudButton>
         </div>
