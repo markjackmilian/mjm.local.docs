@@ -5,59 +5,61 @@
     <DialogContent>
         @if (Versions is null || Versions.Count == 0)
         {
-            <MudText Typo="Typo.body1">No versions found.</MudText>
+            <MudText Typo="Typo.body1" Style="color: var(--ld-text-secondary);">No versions found.</MudText>
         }
         else
         {
-            <MudSimpleTable Dense="true" Hover="true" Striped="true" Style="overflow-x: auto;">
-                <thead>
-                    <tr>
-                        <th>Version</th>
-                        <th>File Name</th>
-                        <th>Type</th>
-                        <th>Size</th>
-                        <th>Date</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var version in Versions)
-                    {
-                        <tr style="@GetRowStyle(version)">
-                            <td>
-                                <MudChip T="string"
-                                         Size="Size.Small"
-                                         Color="@(version.Id == CurrentDocumentId ? Color.Primary : Color.Default)"
-                                         Variant="@(version.Id == CurrentDocumentId ? Variant.Filled : Variant.Outlined)">
-                                    v@(version.VersionNumber)
-                                </MudChip>
-                            </td>
-                            <td>@version.FileName</td>
-                            <td>@version.FileExtension</td>
-                            <td>@FormatFileSize(version.FileSizeBytes)</td>
-                            <td>@version.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</td>
-                            <td>
-                                @if (version.IsSuperseded)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">
-                                        Superseded
-                                    </MudChip>
-                                }
-                                else
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
-                                        Current
-                                    </MudChip>
-                                }
-                            </td>
+            <div style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-md); overflow: hidden;">
+                <MudSimpleTable Dense="true" Hover="true" Style="overflow-x: auto;">
+                    <thead>
+                        <tr>
+                            <th>Version</th>
+                            <th>File Name</th>
+                            <th>Type</th>
+                            <th>Size</th>
+                            <th>Date</th>
+                            <th>Status</th>
                         </tr>
-                    }
-                </tbody>
-            </MudSimpleTable>
+                    </thead>
+                    <tbody>
+                        @foreach (var version in Versions)
+                        {
+                            <tr style="@GetRowStyle(version)">
+                                <td>
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Variant="@(version.Id == CurrentDocumentId ? Variant.Filled : Variant.Outlined)"
+                                             Style="@(version.Id == CurrentDocumentId ? "background: var(--ld-primary-lightest); color: var(--ld-primary);" : "color: var(--ld-chip-default-text); border-color: var(--ld-border);")">
+                                        v@(version.VersionNumber)
+                                    </MudChip>
+                                </td>
+                                <td><MudText Typo="Typo.body2">@version.FileName</MudText></td>
+                                <td><MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">@version.FileExtension</MudText></td>
+                                <td><MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">@FormatFileSize(version.FileSizeBytes)</MudText></td>
+                                <td><MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">@version.CreatedAt.LocalDateTime.ToString("dd/MM/yyyy HH:mm")</MudText></td>
+                                <td>
+                                    @if (version.IsSuperseded)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-warning-bg); color: var(--ld-chip-warning-text);">
+                                            Superseded
+                                        </MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Style="background: var(--ld-chip-success-bg); color: var(--ld-chip-success-text);">
+                                            Current
+                                        </MudChip>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </div>
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Close" Variant="Variant.Text">Close</MudButton>
+        <MudButton OnClick="Close" Variant="Variant.Text" Style="color: var(--ld-text-secondary);">Close</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -76,9 +78,9 @@
     private string GetRowStyle(Document version)
     {
         if (version.Id == CurrentDocumentId)
-            return "background-color: var(--mud-palette-primary-lighten); font-weight: 600;";
+            return "background-color: var(--ld-primary-lightest);";
 
-        return version.IsSuperseded ? "opacity: 0.55;" : string.Empty;
+        return version.IsSuperseded ? "opacity: 0.5;" : string.Empty;
     }
 
     private static string FormatFileSize(long bytes)

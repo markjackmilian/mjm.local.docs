@@ -15,117 +15,147 @@
 }
 else
 {
-    <MudText Typo="Typo.h4" Class="mb-4">Dashboard</MudText>
+    <div class="mb-6">
+        <MudText Typo="Typo.h4" Class="ld-heading">Dashboard</MudText>
+        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
+            Overview of your document workspace
+        </MudText>
+    </div>
     
-    <MudGrid>
-        @* Statistics Cards *@
+    @* Statistics Cards *@
+    <MudGrid Spacing="4" Class="mb-6">
         <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex align-center">
-                    <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Primary" Size="Size.Large" Class="mr-3" />
+            <MudPaper Class="pa-5 ld-stat-green" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
+                <div class="d-flex align-center" style="gap: 16px;">
+                    <div class="ld-stat-icon ld-stat-icon-green">
+                        <MudIcon Icon="@Icons.Material.Rounded.FolderCopy" Style="font-size: 1.25rem;" />
+                    </div>
                     <div>
-                        <MudText Typo="Typo.h4" Color="Color.Primary">@_projectCount</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Projects</MudText>
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
+                            @_projectCount
+                        </MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Projects</MudText>
                     </div>
                 </div>
             </MudPaper>
         </MudItem>
         
         <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex align-center">
-                    <MudIcon Icon="@Icons.Material.Filled.Description" Color="Color.Secondary" Size="Size.Large" Class="mr-3" />
+            <MudPaper Class="pa-5 ld-stat-blue" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
+                <div class="d-flex align-center" style="gap: 16px;">
+                    <div class="ld-stat-icon ld-stat-icon-blue">
+                        <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 1.25rem;" />
+                    </div>
                     <div>
-                        <MudText Typo="Typo.h4" Color="Color.Secondary">@_documentCount</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Documents</MudText>
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
+                            @_documentCount
+                        </MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Documents</MudText>
                     </div>
                 </div>
             </MudPaper>
         </MudItem>
         
         <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex align-center">
-                    <MudIcon Icon="@Icons.Material.Filled.Storage" Color="Color.Info" Size="Size.Large" Class="mr-3" />
+            <MudPaper Class="pa-5 ld-stat-amber" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
+                <div class="d-flex align-center" style="gap: 16px;">
+                    <div class="ld-stat-icon ld-stat-icon-amber">
+                        <MudIcon Icon="@Icons.Material.Rounded.CloudQueue" Style="font-size: 1.25rem;" />
+                    </div>
                     <div>
-                        <MudText Typo="Typo.h4" Color="Color.Info">@FormatFileSize(_totalSize)</MudText>
-                        <MudText Typo="Typo.body2" Class="mud-text-secondary">Total Size</MudText>
+                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
+                            @FormatFileSize(_totalSize)
+                        </MudText>
+                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Total Size</MudText>
                     </div>
                 </div>
             </MudPaper>
         </MudItem>
-        
-        @* Quick Actions *@
-        <MudItem xs="12">
-            <MudText Typo="Typo.h6" Class="mb-3 mt-4">Quick Actions</MudText>
-        </MudItem>
-        
-        <MudItem xs="12" sm="6" md="4">
+    </MudGrid>
+
+    @* Quick Actions *@
+    <div class="mb-6">
+        <p class="ld-section-title">QUICK ACTIONS</p>
+        <div class="d-flex flex-wrap" style="gap: 12px;">
             <MudButton Variant="Variant.Filled" 
                        Color="Color.Primary" 
-                       StartIcon="@Icons.Material.Filled.Add"
-                       FullWidth="true"
-                       Size="Size.Large"
+                       StartIcon="@Icons.Material.Rounded.Add"
+                       Size="Size.Medium"
+                       Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                        OnClick="@(() => Navigation.NavigateTo("/projects/new"))">
                 New Project
             </MudButton>
-        </MudItem>
-        
-        <MudItem xs="12" sm="6" md="4">
+            
             <MudButton Variant="Variant.Outlined" 
                        Color="Color.Primary" 
-                       StartIcon="@Icons.Material.Filled.List"
-                       FullWidth="true"
-                       Size="Size.Large"
+                       StartIcon="@Icons.Material.Rounded.ViewList"
+                       Size="Size.Medium"
+                       Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                        OnClick="@(() => Navigation.NavigateTo("/projects"))">
                 All Projects
             </MudButton>
-        </MudItem>
+        </div>
+    </div>
+    
+    @* Recent Projects *@
+    @if (_recentProjects.Count > 0)
+    {
+        <div class="mb-2">
+            <p class="ld-section-title">RECENT PROJECTS</p>
+        </div>
         
-        @* Recent Projects *@
-        @if (_recentProjects.Count > 0)
-        {
-            <MudItem xs="12">
-                <MudText Typo="Typo.h6" Class="mb-3 mt-4">Recent Projects</MudText>
-            </MudItem>
-            
+        <MudGrid Spacing="3">
             @foreach (var project in _recentProjects)
             {
                 <MudItem xs="12" sm="6" md="4">
-                    <MudCard Elevation="2" Class="cursor-pointer" @onclick="@(() => Navigation.NavigateTo($"/projects/{project.Id}"))">
-                        <MudCardContent>
-                            <div class="d-flex align-center mb-2">
-                                <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Primary" Class="mr-2" />
-                                <MudText Typo="Typo.h6">@project.Name</MudText>
+                    <MudPaper Class="pa-5 ld-card-hover cursor-pointer" 
+                              Elevation="0" 
+                              Style="border-radius: var(--ld-radius-lg);"
+                              @onclick="@(() => Navigation.NavigateTo($"/projects/{project.Id}"))">
+                        <div class="d-flex align-center mb-3" style="gap: 10px;">
+                            <div style="width: 36px; height: 36px; border-radius: 10px; background: var(--ld-folder-bg); display: flex; align-items: center; justify-content: center;">
+                                <MudIcon Icon="@Icons.Material.Rounded.Folder" Style="color: var(--ld-folder-icon); font-size: 1.125rem;" />
                             </div>
-                            @if (!string.IsNullOrEmpty(project.Description))
-                            {
-                                <MudText Typo="Typo.body2" Class="mud-text-secondary" Style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                    @project.Description
-                                </MudText>
-                            }
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary mt-2">
+                            <MudText Style="font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ld-text-primary);">
+                                @project.Name
+                            </MudText>
+                        </div>
+                        @if (!string.IsNullOrEmpty(project.Description))
+                        {
+                            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 12px;">
+                                @project.Description
+                            </MudText>
+                        }
+                        <div class="d-flex align-center" style="gap: 6px;">
+                            <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 0.875rem; color: var(--ld-text-muted);" />
+                            <MudText Style="font-size: 0.75rem; color: var(--ld-text-muted);">
                                 @GetDocumentCountForProject(project.Id) documents
                             </MudText>
-                        </MudCardContent>
-                        <MudCardActions>
-                            <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small">
-                                Open
-                            </MudButton>
-                        </MudCardActions>
-                    </MudCard>
+                        </div>
+                    </MudPaper>
                 </MudItem>
             }
-        }
-        else if (_projectCount == 0)
-        {
-            <MudItem xs="12">
-                <MudAlert Severity="Severity.Info" Class="mt-4">
-                    You haven't created any projects yet. Click "New Project" to get started.
-                </MudAlert>
-            </MudItem>
-        }
-    </MudGrid>
+        </MudGrid>
+    }
+    else if (_projectCount == 0)
+    {
+        <div class="ld-empty-state">
+            <MudIcon Icon="@Icons.Material.Rounded.CreateNewFolder" 
+                     Style="font-size: 3rem; color: var(--ld-text-disabled); margin-bottom: 12px;" />
+            <MudText Style="font-size: 0.9375rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 4px;">
+                No projects yet
+            </MudText>
+            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-bottom: 20px;">
+                Create your first project to start organizing documents.
+            </MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Rounded.Add"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="@(() => Navigation.NavigateTo("/projects/new"))">
+                New Project
+            </MudButton>
+        </div>
+    }
 }
 
 @code {

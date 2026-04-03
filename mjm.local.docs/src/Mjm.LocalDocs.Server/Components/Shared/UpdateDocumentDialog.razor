@@ -4,54 +4,55 @@
 
 <MudDialog>
     <DialogContent>
-        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true">
+        <MudAlert Severity="Severity.Info" Class="mb-4" Dense="true" Variant="Variant.Outlined">
             The current version (v@(Document.VersionNumber)) will be preserved as history.
             Search results will point to the new version.
         </MudAlert>
 
-        <MudText Typo="Typo.body2" Class="mb-2">
-            <strong>Document:</strong> @Document.FileName
-        </MudText>
-        <MudText Typo="Typo.body2" Class="mb-4">
-            <strong>Current version:</strong> v@(Document.VersionNumber)
-        </MudText>
+        <div class="mb-4" style="display: flex; gap: 16px;">
+            <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                <strong style="color: var(--ld-text-primary);">Document:</strong> @Document.FileName
+            </MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary);">
+                <strong style="color: var(--ld-text-primary);">Version:</strong> v@(Document.VersionNumber)
+            </MudText>
+        </div>
 
-        <MudPaper Outlined="true"
-                  Class="@GetDropzoneClass()"
-                  Style="border-width: 2px; min-height: 100px; position: relative;">
+        <div class="ld-dropzone"
+             style="min-height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; position: relative;">
             <InputFile OnChange="OnFileSelected"
                        accept=".txt,.md,.pdf,.docx,.html,.htm,.json,.xml,.csv"
                        class="absolute mud-width-full mud-height-full overflow-hidden z-10"
-                       style="opacity: 0; cursor: pointer;" />
+                       style="opacity: 0; cursor: pointer; position: absolute; top: 0; left: 0; right: 0; bottom: 0;" />
             @if (_selectedFile is not null)
             {
-                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
-                <MudText Typo="Typo.body2" Class="mt-2">
-                    <strong>@_selectedFile.Name</strong> (@FormatFileSize(_selectedFile.Size))
+                <MudIcon Icon="@Icons.Material.Rounded.CheckCircle" Color="Color.Success" Size="Size.Large" />
+                <MudText Typo="Typo.body2" Class="mt-2" Style="font-weight: 500;">
+                    @_selectedFile.Name <span style="color: var(--ld-text-muted);">(@FormatFileSize(_selectedFile.Size))</span>
                 </MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                <MudText Typo="Typo.caption" Style="color: var(--ld-text-muted);">
                     Click to change file
                 </MudText>
             }
             else
             {
-                <MudIcon Icon="@Icons.Material.Filled.UploadFile" Color="Color.Primary" Size="Size.Large" />
-                <MudText Typo="Typo.body2" Class="mt-2">
-                    Select the file for the new version
+                <MudIcon Icon="@Icons.Material.Rounded.UploadFile" Style="color: var(--ld-primary-light); font-size: 2rem;" />
+                <MudText Typo="Typo.body2" Class="mt-2" Style="font-weight: 500;">
+                    Select file for the new version
                 </MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    Formati supportati: .txt, .md, .pdf, .docx, .html, .json, .xml, .csv
+                <MudText Typo="Typo.caption" Style="color: var(--ld-text-muted);">
+                    .txt, .md, .pdf, .docx, .html, .json, .xml, .csv
                 </MudText>
             }
-        </MudPaper>
+        </div>
 
         @if (!string.IsNullOrEmpty(_error))
         {
-            <MudAlert Severity="Severity.Error" Class="mt-3" Dense="true">@_error</MudAlert>
+            <MudAlert Severity="Severity.Error" Class="mt-3" Dense="true" Variant="Variant.Outlined">@_error</MudAlert>
         }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_uploading">Cancel</MudButton>
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Disabled="_uploading" Style="color: var(--ld-text-secondary);">Cancel</MudButton>
         <MudButton OnClick="Submit"
                    Variant="Variant.Filled"
                    Color="Color.Primary"
@@ -123,9 +124,6 @@
     }
 
     private void Cancel() => MudDialog?.Cancel();
-
-    private string GetDropzoneClass() =>
-        "pa-6 d-flex flex-column align-center justify-center cursor-pointer border-dashed";
 
     private static string FormatFileSize(long bytes)
     {
