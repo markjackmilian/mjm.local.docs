@@ -48,15 +48,25 @@ else
                            Title="Back to project" />
             <MudText Typo="Typo.h5" Class="ld-heading">@_project.Name — Chat</MudText>
         </div>
-        <MudButton Variant="Variant.Outlined"
-                   Color="Color.Secondary"
-                   StartIcon="@Icons.Material.Rounded.RestartAlt"
-                   Size="Size.Small"
-                   Style="border-radius: var(--ld-radius-pill);"
-                   OnClick="NewChat"
-                   Disabled="@_isStreaming">
-            New Chat
-        </MudButton>
+        <div class="d-flex align-center gap-2">
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Variant="Variant.Outlined"
+                     Color="Color.Default"
+                     Icon="@Icons.Material.Rounded.SmartToy"
+                     Style="border-radius: var(--ld-radius-pill); font-size: 0.75rem;">
+                @GetProviderLabel()
+            </MudChip>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Rounded.RestartAlt"
+                       Size="Size.Small"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="NewChat"
+                       Disabled="@_isStreaming">
+                New Chat
+            </MudButton>
+        </div>
     </div>
 
     <MudPaper Elevation="0"
@@ -329,6 +339,19 @@ else
         {
             // JS interop may fail during prerender — ignore
         }
+    }
+
+    private string GetProviderLabel()
+    {
+        var chat = Options.Value.Chat;
+        return chat.Provider switch
+        {
+            ChatProvider.OpenAI      => $"OpenAI · {chat.OpenAI.Model}",
+            ChatProvider.AzureOpenAI => $"Azure OpenAI · {chat.AzureOpenAI.DeploymentName}",
+            ChatProvider.Anthropic   => $"Anthropic · {chat.Anthropic.Model}",
+            ChatProvider.Ollama      => $"Ollama · {chat.Ollama.Model}",
+            _                        => "Fake (dev)"
+        };
     }
 
     private static string GetBubbleStyle(string role) => role == "user"
