@@ -41,9 +41,12 @@ public static class ServiceCollectionExtensions
                 fileStorageProvider);
         });
 
+        // Chat service for project RAG chat
+        services.AddScoped<ProjectChatService>();
+
         // API Token service for MCP authentication
         services.AddScoped<ApiTokenService>();
-        
+
         return services;
     }
 }

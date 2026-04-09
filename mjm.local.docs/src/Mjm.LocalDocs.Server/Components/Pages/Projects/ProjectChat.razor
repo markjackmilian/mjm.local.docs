@@ -1,0 +1,250 @@
+@page "/projects/{ProjectId}/chat"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Mjm.LocalDocs.Core.Abstractions
+@using Mjm.LocalDocs.Core.Configuration
+@using Mjm.LocalDocs.Core.Models
+@using Mjm.LocalDocs.Core.Services
+@using Microsoft.Extensions.Options
+@inject IProjectRepository ProjectRepository
+@inject ProjectChatService ChatService
+@inject IOptions<LocalDocsOptions> Options
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@(_project?.Name ?? "Project") — Chat - Local Docs</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto d-block my-8" />
+}
+else if (_project is null)
+{
+    <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center"
+              Style="border: 1px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center;">
+        <MudIcon Icon="@Icons.Material.Rounded.SearchOff"
+                 Style="font-size: 3rem; color: var(--ld-text-muted); margin-bottom: 12px;" />
+        <MudText Style="font-size: 0.9375rem; font-weight: 500; color: var(--ld-text-primary); margin-bottom: 4px;">
+            Project not found
+        </MudText>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="mt-4"
+                   Style="border-radius: var(--ld-radius-pill);"
+                   OnClick="@(() => Navigation.NavigateTo("/projects"))">
+            Back to projects
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 px-0" />
+
+    <div class="d-flex justify-space-between align-center mb-4">
+        <div class="d-flex align-center gap-2">
+            <MudIconButton Icon="@Icons.Material.Rounded.ArrowBack"
+                           Size="Size.Small"
+                           Href="@($"/projects/{ProjectId}")"
+                           Title="Back to project" />
+            <MudText Typo="Typo.h5" Class="ld-heading">@_project.Name — Chat</MudText>
+        </div>
+        <MudButton Variant="Variant.Outlined"
+                   Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Rounded.RestartAlt"
+                   Size="Size.Small"
+                   Style="border-radius: var(--ld-radius-pill);"
+                   OnClick="NewChat"
+                   Disabled="@_isStreaming">
+            New Chat
+        </MudButton>
+    </div>
+
+    <MudPaper Elevation="0"
+              Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); display: flex; flex-direction: column; height: calc(100vh - 220px); min-height: 400px;">
+
+        @* Message list *@
+        <div id="chat-messages"
+             style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+
+            @if (_messages.Count == 0)
+            {
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--ld-text-muted);">
+                    <MudIcon Icon="@Icons.Material.Rounded.ChatBubbleOutline"
+                             Style="font-size: 3rem; margin-bottom: 12px; opacity: 0.4;" />
+                    <MudText Typo="Typo.body1" Style="color: var(--ld-text-muted);">
+                        Ask a question about the project knowledge base
+                    </MudText>
+                </div>
+            }
+
+            @foreach (var msg in _messages)
+            {
+                <div class="@(msg.Role == "user" ? "d-flex justify-end" : "d-flex justify-start")">
+                    <MudPaper Elevation="0"
+                              Class="pa-3"
+                              Style="@GetBubbleStyle(msg.Role)">
+                        @if (msg.Role == "assistant" && string.IsNullOrEmpty(msg.Content) && _isStreaming)
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="width: 120px;" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                        }
+                    </MudPaper>
+                </div>
+            }
+        </div>
+
+        <MudDivider />
+
+        @* Input area *@
+        <div style="padding: 16px; display: flex; gap: 8px; align-items: flex-end;">
+            <MudTextField @bind-Value="_inputText"
+                          Placeholder="Ask a question about this project..."
+                          Variant="Variant.Outlined"
+                          Lines="2"
+                          AutoGrow="true"
+                          MaxLines="6"
+                          Disabled="@_isStreaming"
+                          Style="flex: 1;"
+                          @onkeydown="HandleKeyDown"
+                          Immediate="true" />
+            <MudIconButton Icon="@Icons.Material.Rounded.Send"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           Size="Size.Large"
+                           Disabled="@(string.IsNullOrWhiteSpace(_inputText) || _isStreaming)"
+                           OnClick="SendMessageAsync"
+                           Title="Send (Enter)" />
+        </div>
+    </MudPaper>
+}
+
+@code {
+    [Parameter]
+    public string ProjectId { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private Project? _project;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private readonly List<ChatEntry> _messages = [];
+    private string _inputText = string.Empty;
+    private bool _isStreaming;
+    private CancellationTokenSource? _streamCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Guard: redirect if chat is not enabled
+        if (!Options.Value.Chat.Enabled)
+        {
+            Navigation.NavigateTo($"/projects/{ProjectId}");
+            return;
+        }
+
+        _project = await ProjectRepository.GetByIdAsync(ProjectId);
+
+        if (_project is not null)
+        {
+            _breadcrumbs =
+            [
+                new BreadcrumbItem("Projects", href: "/projects"),
+                new BreadcrumbItem(_project.Name, href: $"/projects/{ProjectId}"),
+                new BreadcrumbItem("Chat", href: null, disabled: true)
+            ];
+        }
+
+        _loading = false;
+    }
+
+    private async Task SendMessageAsync()
+    {
+        var userText = _inputText.Trim();
+        if (string.IsNullOrEmpty(userText) || _isStreaming || _project is null)
+            return;
+
+        _inputText = string.Empty;
+        _isStreaming = true;
+
+        // Snapshot of history before adding the new user message
+        var historySnapshot = _messages
+            .Select(m => new ChatTurn(m.Role, m.Content))
+            .ToList();
+
+        _messages.Add(new ChatEntry("user", userText));
+        var assistantEntry = new ChatEntry("assistant", string.Empty);
+        _messages.Add(assistantEntry);
+
+        await ScrollToBottomAsync();
+
+        _streamCts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var token in ChatService.ChatAsync(
+                userText,
+                _project.Id,
+                _project.Name,
+                historySnapshot,
+                _streamCts.Token))
+            {
+                assistantEntry.Content += token;
+                await InvokeAsync(StateHasChanged);
+                await ScrollToBottomAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (string.IsNullOrEmpty(assistantEntry.Content))
+                assistantEntry.Content = "(cancelled)";
+        }
+        catch (Exception ex)
+        {
+            assistantEntry.Content = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _isStreaming = false;
+            _streamCts?.Dispose();
+            _streamCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_inputText) && !_isStreaming)
+        {
+            await SendMessageAsync();
+        }
+    }
+
+    private void NewChat()
+    {
+        _streamCts?.Cancel();
+        _messages.Clear();
+        _inputText = string.Empty;
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", "chat-messages");
+        }
+        catch
+        {
+            // JS interop may fail during prerender — ignore
+        }
+    }
+
+    private static string GetBubbleStyle(string role) => role == "user"
+        ? "background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); border-radius: 16px 16px 4px 16px; max-width: 72%; word-break: break-word;"
+        : "background: var(--ld-surface); border: 1px solid var(--ld-border); border-radius: 16px 16px 16px 4px; max-width: 82%; word-break: break-word;";
+
+    /// <summary>Mutable message entry used during streaming.</summary>
+    private sealed class ChatEntry(string role, string content)
+    {
+        public string Role { get; } = role;
+        public string Content { get; set; } = content;
+    }
+}

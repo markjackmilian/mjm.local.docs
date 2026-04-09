@@ -29,6 +29,11 @@ public sealed class LocalDocsOptions
     /// File storage configuration for document content.
     /// </summary>
     public FileStorageOptions FileStorage { get; init; } = new();
+
+    /// <summary>
+    /// Chat completion configuration.
+    /// </summary>
+    public ChatOptions Chat { get; init; } = new();
 }
 
 /// <summary>
@@ -349,4 +354,153 @@ public sealed class AzureBlobStorageOptions
     /// Create the container if it doesn't exist.
     /// </summary>
     public bool CreateContainerIfNotExists { get; init; } = true;
+}
+
+/// <summary>
+/// Configuration options for the chat completion provider.
+/// </summary>
+public sealed class ChatOptions
+{
+    /// <summary>
+    /// Whether the chat feature is enabled.
+    /// When false, the Chat button is hidden from project detail and the chat page redirects away.
+    /// </summary>
+    public bool Enabled { get; init; } = false;
+
+    /// <summary>
+    /// The chat completion provider to use.
+    /// </summary>
+    public ChatProvider Provider { get; init; } = ChatProvider.Fake;
+
+    /// <summary>
+    /// Maximum number of document chunks to include as context in each request.
+    /// </summary>
+    public int MaxContextChunks { get; init; } = 5;
+
+    /// <summary>
+    /// OpenAI-specific configuration.
+    /// </summary>
+    public OpenAIChatOptions OpenAI { get; init; } = new();
+
+    /// <summary>
+    /// Azure OpenAI-specific configuration.
+    /// </summary>
+    public AzureOpenAIChatOptions AzureOpenAI { get; init; } = new();
+
+    /// <summary>
+    /// Anthropic-specific configuration.
+    /// </summary>
+    public AnthropicChatOptions Anthropic { get; init; } = new();
+
+    /// <summary>
+    /// Ollama-specific configuration.
+    /// </summary>
+    public OllamaChatOptions Ollama { get; init; } = new();
+}
+
+/// <summary>
+/// Supported chat completion providers.
+/// </summary>
+public enum ChatProvider
+{
+    /// <summary>
+    /// Fake/simulated responses for development and testing.
+    /// </summary>
+    Fake,
+
+    /// <summary>
+    /// OpenAI chat completions API.
+    /// </summary>
+    OpenAI,
+
+    /// <summary>
+    /// Azure OpenAI Service chat completions.
+    /// </summary>
+    AzureOpenAI,
+
+    /// <summary>
+    /// Anthropic Claude API.
+    /// </summary>
+    Anthropic,
+
+    /// <summary>
+    /// Ollama local LLM (e.g., llama3, mistral, phi3).
+    /// </summary>
+    Ollama
+}
+
+/// <summary>
+/// OpenAI chat completion configuration.
+/// </summary>
+public sealed class OpenAIChatOptions
+{
+    /// <summary>
+    /// OpenAI API key. Can also be set via environment variable OPENAI_API_KEY.
+    /// </summary>
+    public string? ApiKey { get; init; }
+
+    /// <summary>
+    /// The chat model to use (e.g., gpt-4o, gpt-4o-mini).
+    /// </summary>
+    public string Model { get; init; } = "gpt-4o-mini";
+}
+
+/// <summary>
+/// Azure OpenAI Service chat completion configuration.
+/// </summary>
+public sealed class AzureOpenAIChatOptions
+{
+    /// <summary>
+    /// Azure OpenAI endpoint URL.
+    /// Can also be set via environment variable AZURE_OPENAI_ENDPOINT.
+    /// </summary>
+    public string? Endpoint { get; init; }
+
+    /// <summary>
+    /// Azure OpenAI API key.
+    /// Can also be set via environment variable AZURE_OPENAI_API_KEY.
+    /// </summary>
+    public string? ApiKey { get; init; }
+
+    /// <summary>
+    /// The deployment name for the chat model.
+    /// </summary>
+    public string DeploymentName { get; init; } = "gpt-4o";
+}
+
+/// <summary>
+/// Anthropic chat completion configuration.
+/// </summary>
+public sealed class AnthropicChatOptions
+{
+    /// <summary>
+    /// Anthropic API key. Can also be set via environment variable ANTHROPIC_API_KEY.
+    /// </summary>
+    public string? ApiKey { get; init; }
+
+    /// <summary>
+    /// The Claude model to use (e.g., claude-sonnet-4-6, claude-haiku-4-5-20251001).
+    /// </summary>
+    public string Model { get; init; } = "claude-sonnet-4-6";
+
+    /// <summary>
+    /// Maximum tokens to generate in the response.
+    /// </summary>
+    public int MaxTokens { get; init; } = 4096;
+}
+
+/// <summary>
+/// Ollama local LLM chat completion configuration.
+/// </summary>
+public sealed class OllamaChatOptions
+{
+    /// <summary>
+    /// Ollama server endpoint URL.
+    /// </summary>
+    public string Endpoint { get; init; } = "http://localhost:11434";
+
+    /// <summary>
+    /// The model to use (e.g., llama3, mistral, phi3, qwen2).
+    /// </summary>
+    public string Model { get; init; } = "llama3";
 }
