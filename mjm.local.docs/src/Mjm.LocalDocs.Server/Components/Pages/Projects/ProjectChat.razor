@@ -1,10 +1,12 @@
 @page "/projects/{ProjectId}/chat"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@using Markdig
 @using Mjm.LocalDocs.Core.Abstractions
 @using Mjm.LocalDocs.Core.Configuration
 @using Mjm.LocalDocs.Core.Models
 @using Mjm.LocalDocs.Core.Services
+@using Microsoft.AspNetCore.Components
 @using Microsoft.Extensions.Options
 @inject IProjectRepository ProjectRepository
 @inject ProjectChatService ChatService
@@ -85,6 +87,17 @@ else
                         {
                             <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="width: 120px;" />
                         }
+                        else if (msg.Role == "assistant")
+                        {
+                            @if (msg.IsStreaming)
+                            {
+                                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                            }
+                            else
+                            {
+                                <div class="ld-markdown-output">@msg.RenderedMarkdown</div>
+                            }
+                        }
                         else
                         {
                             <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
@@ -118,6 +131,85 @@ else
         </div>
     </MudPaper>
 }
+
+<style>
+    .ld-markdown-output {
+        font-size: 0.875rem;
+        line-height: 1.6;
+        word-break: break-word;
+        color: inherit;
+    }
+
+    .ld-markdown-output p { margin: 0 0 0.5rem 0; }
+    .ld-markdown-output p:last-child { margin-bottom: 0; }
+
+    .ld-markdown-output h1, .ld-markdown-output h2, .ld-markdown-output h3,
+    .ld-markdown-output h4, .ld-markdown-output h5, .ld-markdown-output h6 {
+        margin: 0.75rem 0 0.25rem 0;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+    .ld-markdown-output h1 { font-size: 1.25rem; }
+    .ld-markdown-output h2 { font-size: 1.1rem; }
+    .ld-markdown-output h3 { font-size: 1rem; }
+
+    .ld-markdown-output ul, .ld-markdown-output ol {
+        margin: 0.25rem 0 0.5rem 0;
+        padding-left: 1.4rem;
+    }
+    .ld-markdown-output li { margin-bottom: 0.15rem; }
+
+    .ld-markdown-output code {
+        font-family: "Cascadia Code", "Fira Code", monospace;
+        font-size: 0.8rem;
+        background: var(--ld-surface);
+        border: 1px solid var(--ld-border);
+        border-radius: 4px;
+        padding: 0.1em 0.35em;
+    }
+
+    .ld-markdown-output pre {
+        background: var(--ld-surface);
+        border: 1px solid var(--ld-border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        margin: 0.4rem 0;
+    }
+    .ld-markdown-output pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.8rem;
+    }
+
+    .ld-markdown-output blockquote {
+        border-left: 3px solid var(--mud-palette-primary);
+        margin: 0.4rem 0;
+        padding: 0.25rem 0.75rem;
+        color: var(--ld-text-muted);
+        font-style: italic;
+    }
+
+    .ld-markdown-output table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 0.4rem 0;
+        font-size: 0.8rem;
+    }
+    .ld-markdown-output th, .ld-markdown-output td {
+        border: 1px solid var(--ld-border);
+        padding: 6px 10px;
+        text-align: left;
+    }
+    .ld-markdown-output th {
+        background: var(--ld-surface);
+        font-weight: 600;
+    }
+
+    .ld-markdown-output a { color: var(--mud-palette-primary); }
+    .ld-markdown-output hr { border: none; border-top: 1px solid var(--ld-border); margin: 0.5rem 0; }
+</style>
 
 @code {
     [Parameter]
@@ -164,6 +256,7 @@ else
 
         _inputText = string.Empty;
         _isStreaming = true;
+        await InvokeAsync(StateHasChanged);
 
         // Snapshot of history before adding the new user message
         var historySnapshot = _messages
@@ -171,7 +264,7 @@ else
             .ToList();
 
         _messages.Add(new ChatEntry("user", userText));
-        var assistantEntry = new ChatEntry("assistant", string.Empty);
+        var assistantEntry = new ChatEntry("assistant", string.Empty) { IsStreaming = true };
         _messages.Add(assistantEntry);
 
         await ScrollToBottomAsync();
@@ -203,6 +296,7 @@ else
         }
         finally
         {
+            assistantEntry.IsStreaming = false;
             _isStreaming = false;
             _streamCts?.Dispose();
             _streamCts = null;
@@ -241,10 +335,17 @@ else
         ? "background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); border-radius: 16px 16px 4px 16px; max-width: 72%; word-break: break-word;"
         : "background: var(--ld-surface); border: 1px solid var(--ld-border); border-radius: 16px 16px 16px 4px; max-width: 82%; word-break: break-word;";
 
+    private static readonly MarkdownPipeline _markdownPipeline =
+        new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
     /// <summary>Mutable message entry used during streaming.</summary>
     private sealed class ChatEntry(string role, string content)
     {
         public string Role { get; } = role;
         public string Content { get; set; } = content;
+        public bool IsStreaming { get; set; }
+
+        public MarkupString RenderedMarkdown =>
+            new(Markdown.ToHtml(Content, _markdownPipeline));
     }
 }
