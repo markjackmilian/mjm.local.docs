@@ -103,19 +103,48 @@ else
                     <MudPaper Elevation="0"
                               Class="pa-3"
                               Style="@GetBubbleStyle(msg.Role)">
-                        @if (msg.Role == "assistant" && string.IsNullOrEmpty(msg.Content) && _isStreaming)
+                        @if (msg.Role == "assistant")
                         {
-                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="width: 120px;" />
-                        }
-                        else if (msg.Role == "assistant")
-                        {
-                            @if (msg.IsStreaming)
+                            @if (msg.ThinkingSteps.Count > 0 || msg.IsThinking)
                             {
-                                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                                <div class="thinking-panel">
+                                    @foreach (var (stepMsg, stepIdx) in msg.ThinkingSteps)
+                                    {
+                                        <div class="thinking-step">
+                                            @if (stepIdx > 0)
+                                            {
+                                                <span class="thinking-icon">&#x1F50D;</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="thinking-icon">&#x26A1;</span>
+                                            }
+                                            <span>@stepMsg</span>
+                                        </div>
+                                    }
+                                    @if (msg.IsThinking)
+                                    {
+                                        <div class="thinking-step thinking-active">
+                                            <span class="thinking-spinner"></span>
+                                            <span>Ricerca in corso...</span>
+                                        </div>
+                                    }
+                                </div>
                             }
-                            else
+                            @if (string.IsNullOrEmpty(msg.Content) && _isStreaming && msg.ThinkingSteps.Count == 0 && !msg.IsThinking)
                             {
-                                <div class="ld-markdown-output">@msg.RenderedMarkdown</div>
+                                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="width: 120px;" />
+                            }
+                            else if (!string.IsNullOrEmpty(msg.Content))
+                            {
+                                @if (msg.IsStreaming)
+                                {
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                                }
+                                else
+                                {
+                                    <div class="ld-markdown-output">@msg.RenderedMarkdown</div>
+                                }
                             }
                         }
                         else
@@ -250,6 +279,31 @@ else
 
     .ld-markdown-output a { color: var(--mud-palette-primary); }
     .ld-markdown-output hr { border: none; border-top: 1px solid var(--ld-border); margin: 0.5rem 0; }
+
+    .thinking-panel {
+        font-size: 0.78rem;
+        color: #6b7280;
+        border-left: 2px solid #d1d5db;
+        padding: 4px 10px;
+        margin-bottom: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .thinking-step { display: flex; align-items: center; gap: 6px; }
+    .thinking-active { font-style: italic; }
+    .thinking-icon { font-size: 0.75rem; }
+    .thinking-spinner {
+        width: 10px;
+        height: 10px;
+        border: 2px solid #9ca3af;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: ld-spin 0.8s linear infinite;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+    @@keyframes ld-spin { to { transform: rotate(360deg); } }
 </style>
 
 @code {
@@ -317,7 +371,7 @@ else
 
         try
         {
-            await foreach (var token in ChatService.ChatAsync(
+            await foreach (var evt in ChatService.ChatAsync(
                 userText,
                 _project.Id,
                 _project.Name,
@@ -325,7 +379,16 @@ else
                 _agenticMode,
                 _streamCts.Token))
             {
-                assistantEntry.Content += token;
+                if (evt is TextTokenEvent text)
+                {
+                    assistantEntry.IsThinking = false;
+                    assistantEntry.Content += text.Token;
+                }
+                else if (evt is ThinkingEvent thinking)
+                {
+                    assistantEntry.IsThinking = true;
+                    assistantEntry.ThinkingSteps.Add((thinking.Message, thinking.SearchIndex));
+                }
                 await InvokeAsync(StateHasChanged);
                 await ScrollToBottomAsync();
             }
@@ -402,6 +465,8 @@ else
         public string Role { get; } = role;
         public string Content { get; set; } = content;
         public bool IsStreaming { get; set; }
+        public bool IsThinking { get; set; }
+        public List<(string Message, int SearchIndex)> ThinkingSteps { get; } = [];
 
         public MarkupString RenderedMarkdown =>
             new(Markdown.ToHtml(Content, _markdownPipeline));

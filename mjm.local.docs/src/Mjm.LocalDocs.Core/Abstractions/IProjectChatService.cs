@@ -1,3 +1,5 @@
+using Mjm.LocalDocs.Core.Models;
+
 namespace Mjm.LocalDocs.Core.Abstractions;
 
 /// <summary>
@@ -7,6 +9,7 @@ public interface IProjectChatService
 {
     /// <summary>
     /// Streams a chat response grounded on the project's knowledge base.
+    /// In agentic mode also yields <see cref="ThinkingEvent"/> items showing which searches the agent runs.
     /// </summary>
     /// <param name="userMessage">The latest user message.</param>
     /// <param name="projectId">The project whose documents form the context.</param>
@@ -17,8 +20,11 @@ public interface IProjectChatService
     /// When false, uses classic static RAG (search once, build context, respond).
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>An async stream of text tokens forming the assistant response.</returns>
-    IAsyncEnumerable<string> ChatAsync(
+    /// <returns>
+    /// An async stream of <see cref="ChatStreamEvent"/>: <see cref="TextTokenEvent"/> for response text
+    /// and <see cref="ThinkingEvent"/> for agentic search steps.
+    /// </returns>
+    IAsyncEnumerable<ChatStreamEvent> ChatAsync(
         string userMessage,
         string projectId,
         string projectName,

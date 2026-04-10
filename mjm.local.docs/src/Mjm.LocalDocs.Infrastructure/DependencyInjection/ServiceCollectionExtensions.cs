@@ -5,6 +5,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Configuration;
@@ -354,7 +355,8 @@ public static class ServiceCollectionExtensions
             var documentService = sp.GetRequiredService<DocumentService>();
             var chatClient = sp.GetService<IChatClient>();
             var options = sp.GetRequiredService<IOptions<LocalDocsOptions>>();
-            return new AgenticProjectChatService(staticService, documentService, chatClient, options);
+            var logger = sp.GetRequiredService<ILogger<AgenticProjectChatService>>();
+            return new AgenticProjectChatService(staticService, documentService, chatClient, options, logger);
         });
     }
 

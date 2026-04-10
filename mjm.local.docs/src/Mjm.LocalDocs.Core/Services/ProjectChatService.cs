@@ -2,6 +2,8 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Configuration;
+using Mjm.LocalDocs.Core.Models;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mjm.LocalDocs.Core.Services;
@@ -15,15 +17,18 @@ public sealed class ProjectChatService
     private readonly DocumentService _documentService;
     private readonly IChatCompletionService _chatCompletionService;
     private readonly int _maxContextChunks;
+    private readonly ILogger<ProjectChatService> _logger;
 
     public ProjectChatService(
         DocumentService documentService,
         IChatCompletionService chatCompletionService,
-        IOptions<LocalDocsOptions> options)
+        IOptions<LocalDocsOptions> options,
+        ILogger<ProjectChatService> logger)
     {
         _documentService = documentService;
         _chatCompletionService = chatCompletionService;
         _maxContextChunks = options.Value.Chat.MaxContextChunks;
+        _logger = logger;
     }
 
     /// <summary>
@@ -35,7 +40,7 @@ public sealed class ProjectChatService
     /// <param name="history">Previous turns (excluding the current user message).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>An async stream of text tokens forming the assistant response.</returns>
-    public async IAsyncEnumerable<string> ChatAsync(
+    public async IAsyncEnumerable<ChatStreamEvent> ChatAsync(
         string userMessage,
         string projectId,
         string projectName,
@@ -43,8 +48,11 @@ public sealed class ProjectChatService
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // 1. Retrieve relevant chunks from the project knowledge base
+        _logger.LogDebug("[ClassicRAG] Searching for relevant chunks (maxChunks={Max}) — project={ProjectId}", _maxContextChunks, projectId);
         var searchResults = await _documentService.SearchAsync(
             userMessage, projectId, _maxContextChunks, cancellationToken);
+
+        _logger.LogInformation("[ClassicRAG] Search returned {Count} chunk(s)", searchResults.Count);
 
         // 2. Build context from retrieved chunks
         var context = new StringBuilder();
@@ -71,10 +79,11 @@ public sealed class ProjectChatService
             .ToList();
 
         // 5. Stream the response
+        _logger.LogDebug("[ClassicRAG] Starting streaming response");
         await foreach (var token in _chatCompletionService.CompleteStreamAsync(
             systemPrompt, fullHistory, cancellationToken))
         {
-            yield return token;
+            yield return new TextTokenEvent(token);
         }
     }
 
