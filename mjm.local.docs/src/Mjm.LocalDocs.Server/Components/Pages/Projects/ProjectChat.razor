@@ -5,11 +5,10 @@
 @using Mjm.LocalDocs.Core.Abstractions
 @using Mjm.LocalDocs.Core.Configuration
 @using Mjm.LocalDocs.Core.Models
-@using Mjm.LocalDocs.Core.Services
 @using Microsoft.AspNetCore.Components
 @using Microsoft.Extensions.Options
 @inject IProjectRepository ProjectRepository
-@inject ProjectChatService ChatService
+@inject IProjectChatService ChatService
 @inject IOptions<LocalDocsOptions> Options
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -38,9 +37,11 @@ else if (_project is null)
 }
 else
 {
-    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-4 px-0" />
+    <div id="chat-page-root" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
 
-    <div class="d-flex justify-space-between align-center mb-4">
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-2 px-0" Style="flex-shrink: 0;" />
+
+    <div class="d-flex justify-space-between align-center mb-2" style="flex-shrink: 0;">
         <div class="d-flex align-center gap-2">
             <MudIconButton Icon="@Icons.Material.Rounded.ArrowBack"
                            Size="Size.Small"
@@ -57,6 +58,16 @@ else
                      Style="border-radius: var(--ld-radius-pill); font-size: 0.75rem;">
                 @GetProviderLabel()
             </MudChip>
+            <MudButton Variant="@(_agenticMode ? Variant.Filled : Variant.Outlined)"
+                       Color="Color.Secondary"
+                       StartIcon="@(_agenticMode ? Icons.Material.Rounded.AutoAwesome : Icons.Material.Rounded.Psychology)"
+                       Size="Size.Small"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="@(() => _agenticMode = !_agenticMode)"
+                       Disabled="@_isStreaming"
+                       Title="@(_agenticMode ? "Switch to Classic RAG mode" : "Switch to Agentic mode")">
+                @(_agenticMode ? "Agentic" : "Classic")
+            </MudButton>
             <MudButton Variant="Variant.Outlined"
                        Color="Color.Secondary"
                        StartIcon="@Icons.Material.Rounded.RestartAlt"
@@ -69,12 +80,11 @@ else
         </div>
     </div>
 
-    <MudPaper Elevation="0"
-              Style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); display: flex; flex-direction: column; height: calc(100vh - 220px); min-height: 400px;">
+    <div style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--mud-palette-surface);">
 
         @* Message list *@
         <div id="chat-messages"
-             style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+             style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
 
             @if (_messages.Count == 0)
             {
@@ -117,7 +127,6 @@ else
             }
         </div>
 
-        <MudDivider />
 
         @* Input area *@
         <div style="padding: 16px; display: flex; gap: 8px; align-items: flex-end;">
@@ -139,10 +148,32 @@ else
                            OnClick="SendMessageAsync"
                            Title="Send (Enter)" />
         </div>
-    </MudPaper>
+    </div>
+
+    </div>
 }
 
 <style>
+    /* Fix height of the full parent chain so chat fills viewport without page scroll */
+    .mud-main-content:has(#chat-page-root) {
+        height: 100vh !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+    }
+
+    .mud-main-content:has(#chat-page-root) > .mud-container {
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+    }
+
     .ld-markdown-output {
         font-size: 0.875rem;
         line-height: 1.6;
@@ -232,6 +263,7 @@ else
     private readonly List<ChatEntry> _messages = [];
     private string _inputText = string.Empty;
     private bool _isStreaming;
+    private bool _agenticMode;
     private CancellationTokenSource? _streamCts;
 
     protected override async Task OnInitializedAsync()
@@ -242,6 +274,8 @@ else
             Navigation.NavigateTo($"/projects/{ProjectId}");
             return;
         }
+
+        _agenticMode = Options.Value.Chat.AgenticMode;
 
         _project = await ProjectRepository.GetByIdAsync(ProjectId);
 
@@ -288,6 +322,7 @@ else
                 _project.Id,
                 _project.Name,
                 historySnapshot,
+                _agenticMode,
                 _streamCts.Token))
             {
                 assistantEntry.Content += token;

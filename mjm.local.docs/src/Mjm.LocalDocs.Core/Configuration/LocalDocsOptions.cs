@@ -378,6 +378,12 @@ public sealed class ChatOptions
     public int MaxContextChunks { get; init; } = 5;
 
     /// <summary>
+    /// Default mode for the UI toggle. Users can override per-session in the chat page.
+    /// When true, the LLM autonomously calls search tools (requires OpenAI, AzureOpenAI, or Ollama).
+    /// </summary>
+    public bool AgenticMode { get; init; } = false;
+
+    /// <summary>
     /// OpenAI-specific configuration.
     /// </summary>
     public OpenAIChatOptions OpenAI { get; init; } = new();
