@@ -1,0 +1,474 @@
+@page "/projects/{ProjectId}/chat"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Markdig
+@using Mjm.LocalDocs.Core.Abstractions
+@using Mjm.LocalDocs.Core.Configuration
+@using Mjm.LocalDocs.Core.Models
+@using Microsoft.AspNetCore.Components
+@using Microsoft.Extensions.Options
+@inject IProjectRepository ProjectRepository
+@inject IProjectChatService ChatService
+@inject IOptions<LocalDocsOptions> Options
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>@(_project?.Name ?? "Project") — Chat - Local Docs</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto d-block my-8" />
+}
+else if (_project is null)
+{
+    <MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center"
+              Style="border: 1px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center;">
+        <MudIcon Icon="@Icons.Material.Rounded.SearchOff"
+                 Style="font-size: 3rem; color: var(--ld-text-muted); margin-bottom: 12px;" />
+        <MudText Style="font-size: 0.9375rem; font-weight: 500; color: var(--ld-text-primary); margin-bottom: 4px;">
+            Project not found
+        </MudText>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="mt-4"
+                   Style="border-radius: var(--ld-radius-pill);"
+                   OnClick="@(() => Navigation.NavigateTo("/projects"))">
+            Back to projects
+        </MudButton>
+    </MudPaper>
+}
+else
+{
+    <div id="chat-page-root" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+
+    <MudBreadcrumbs Items="_breadcrumbs" Class="mb-2 px-0" Style="flex-shrink: 0;" />
+
+    <div class="d-flex justify-space-between align-center mb-2" style="flex-shrink: 0;">
+        <div class="d-flex align-center gap-2">
+            <MudIconButton Icon="@Icons.Material.Rounded.ArrowBack"
+                           Size="Size.Small"
+                           Href="@($"/projects/{ProjectId}")"
+                           Title="Back to project" />
+            <MudText Typo="Typo.h5" Class="ld-heading">@_project.Name — Chat</MudText>
+        </div>
+        <div class="d-flex align-center gap-2">
+            <MudChip T="string"
+                     Size="Size.Small"
+                     Variant="Variant.Outlined"
+                     Color="Color.Default"
+                     Icon="@Icons.Material.Rounded.SmartToy"
+                     Style="border-radius: var(--ld-radius-pill); font-size: 0.75rem;">
+                @GetProviderLabel()
+            </MudChip>
+            <MudButton Variant="@(_agenticMode ? Variant.Filled : Variant.Outlined)"
+                       Color="Color.Secondary"
+                       StartIcon="@(_agenticMode ? Icons.Material.Rounded.AutoAwesome : Icons.Material.Rounded.Psychology)"
+                       Size="Size.Small"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="@(() => _agenticMode = !_agenticMode)"
+                       Disabled="@_isStreaming"
+                       Title="@(_agenticMode ? "Switch to Classic RAG mode" : "Switch to Agentic mode")">
+                @(_agenticMode ? "Agentic" : "Classic")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       StartIcon="@Icons.Material.Rounded.RestartAlt"
+                       Size="Size.Small"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="NewChat"
+                       Disabled="@_isStreaming">
+                New Chat
+            </MudButton>
+        </div>
+    </div>
+
+    <div style="border: 1px solid var(--ld-border); border-radius: var(--ld-radius-lg); display: flex; flex-direction: column; flex: 1; min-height: 0; background: var(--mud-palette-surface);">
+
+        @* Message list *@
+        <div id="chat-messages"
+             style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+
+            @if (_messages.Count == 0)
+            {
+                <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--ld-text-muted);">
+                    <MudIcon Icon="@Icons.Material.Rounded.ChatBubbleOutline"
+                             Style="font-size: 3rem; margin-bottom: 12px; opacity: 0.4;" />
+                    <MudText Typo="Typo.body1" Style="color: var(--ld-text-muted);">
+                        Ask a question about the project knowledge base
+                    </MudText>
+                </div>
+            }
+
+            @foreach (var msg in _messages)
+            {
+                <div class="@(msg.Role == "user" ? "d-flex justify-end" : "d-flex justify-start")">
+                    <MudPaper Elevation="0"
+                              Class="pa-3"
+                              Style="@GetBubbleStyle(msg.Role)">
+                        @if (msg.Role == "assistant")
+                        {
+                            @if (msg.ThinkingSteps.Count > 0 || msg.IsThinking)
+                            {
+                                <div class="thinking-panel">
+                                    @foreach (var (stepMsg, stepIdx) in msg.ThinkingSteps)
+                                    {
+                                        <div class="thinking-step">
+                                            @if (stepIdx > 0)
+                                            {
+                                                <span class="thinking-icon">&#x1F50D;</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="thinking-icon">&#x26A1;</span>
+                                            }
+                                            <span>@stepMsg</span>
+                                        </div>
+                                    }
+                                    @if (msg.IsThinking)
+                                    {
+                                        <div class="thinking-step thinking-active">
+                                            <span class="thinking-spinner"></span>
+                                            <span>Ricerca in corso...</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            @if (string.IsNullOrEmpty(msg.Content) && _isStreaming && msg.ThinkingSteps.Count == 0 && !msg.IsThinking)
+                            {
+                                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Style="width: 120px;" />
+                            }
+                            else if (!string.IsNullOrEmpty(msg.Content))
+                            {
+                                @if (msg.IsStreaming)
+                                {
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                                }
+                                else
+                                {
+                                    <div class="ld-markdown-output">@msg.RenderedMarkdown</div>
+                                }
+                            }
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap; word-break: break-word;">@msg.Content</MudText>
+                        }
+                    </MudPaper>
+                </div>
+            }
+        </div>
+
+
+        @* Input area *@
+        <div style="padding: 16px; display: flex; gap: 8px; align-items: flex-end;">
+            <MudTextField @bind-Value="_inputText"
+                          Placeholder="Ask a question about this project..."
+                          Variant="Variant.Outlined"
+                          Lines="2"
+                          AutoGrow="true"
+                          MaxLines="6"
+                          Disabled="@_isStreaming"
+                          Style="flex: 1;"
+                          @onkeydown="HandleKeyDown"
+                          Immediate="true" />
+            <MudIconButton Icon="@Icons.Material.Rounded.Send"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           Size="Size.Large"
+                           Disabled="@(string.IsNullOrWhiteSpace(_inputText) || _isStreaming)"
+                           OnClick="SendMessageAsync"
+                           Title="Send (Enter)" />
+        </div>
+    </div>
+
+    </div>
+}
+
+<style>
+    /* Fix height of the full parent chain so chat fills viewport without page scroll */
+    .mud-main-content:has(#chat-page-root) {
+        height: 100vh !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        display: flex !important;
+        flex-direction: column !important;
+        box-sizing: border-box !important;
+    }
+
+    .mud-main-content:has(#chat-page-root) > .mud-container {
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        padding-top: 8px !important;
+        padding-bottom: 8px !important;
+    }
+
+    .ld-markdown-output {
+        font-size: 0.875rem;
+        line-height: 1.6;
+        word-break: break-word;
+        color: inherit;
+    }
+
+    .ld-markdown-output p { margin: 0 0 0.5rem 0; }
+    .ld-markdown-output p:last-child { margin-bottom: 0; }
+
+    .ld-markdown-output h1, .ld-markdown-output h2, .ld-markdown-output h3,
+    .ld-markdown-output h4, .ld-markdown-output h5, .ld-markdown-output h6 {
+        margin: 0.75rem 0 0.25rem 0;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+    .ld-markdown-output h1 { font-size: 1.25rem; }
+    .ld-markdown-output h2 { font-size: 1.1rem; }
+    .ld-markdown-output h3 { font-size: 1rem; }
+
+    .ld-markdown-output ul, .ld-markdown-output ol {
+        margin: 0.25rem 0 0.5rem 0;
+        padding-left: 1.4rem;
+    }
+    .ld-markdown-output li { margin-bottom: 0.15rem; }
+
+    .ld-markdown-output code {
+        font-family: "Cascadia Code", "Fira Code", monospace;
+        font-size: 0.8rem;
+        background: var(--ld-surface);
+        border: 1px solid var(--ld-border);
+        border-radius: 4px;
+        padding: 0.1em 0.35em;
+    }
+
+    .ld-markdown-output pre {
+        background: var(--ld-surface);
+        border: 1px solid var(--ld-border);
+        border-radius: 8px;
+        padding: 12px 14px;
+        overflow-x: auto;
+        margin: 0.4rem 0;
+    }
+    .ld-markdown-output pre code {
+        background: none;
+        border: none;
+        padding: 0;
+        font-size: 0.8rem;
+    }
+
+    .ld-markdown-output blockquote {
+        border-left: 3px solid var(--mud-palette-primary);
+        margin: 0.4rem 0;
+        padding: 0.25rem 0.75rem;
+        color: var(--ld-text-muted);
+        font-style: italic;
+    }
+
+    .ld-markdown-output table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 0.4rem 0;
+        font-size: 0.8rem;
+    }
+    .ld-markdown-output th, .ld-markdown-output td {
+        border: 1px solid var(--ld-border);
+        padding: 6px 10px;
+        text-align: left;
+    }
+    .ld-markdown-output th {
+        background: var(--ld-surface);
+        font-weight: 600;
+    }
+
+    .ld-markdown-output a { color: var(--mud-palette-primary); }
+    .ld-markdown-output hr { border: none; border-top: 1px solid var(--ld-border); margin: 0.5rem 0; }
+
+    .thinking-panel {
+        font-size: 0.78rem;
+        color: #6b7280;
+        border-left: 2px solid #d1d5db;
+        padding: 4px 10px;
+        margin-bottom: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+    .thinking-step { display: flex; align-items: center; gap: 6px; }
+    .thinking-active { font-style: italic; }
+    .thinking-icon { font-size: 0.75rem; }
+    .thinking-spinner {
+        width: 10px;
+        height: 10px;
+        border: 2px solid #9ca3af;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: ld-spin 0.8s linear infinite;
+        display: inline-block;
+        flex-shrink: 0;
+    }
+    @@keyframes ld-spin { to { transform: rotate(360deg); } }
+</style>
+
+@code {
+    [Parameter]
+    public string ProjectId { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private Project? _project;
+    private List<BreadcrumbItem> _breadcrumbs = [];
+
+    private readonly List<ChatEntry> _messages = [];
+    private string _inputText = string.Empty;
+    private bool _isStreaming;
+    private bool _agenticMode;
+    private CancellationTokenSource? _streamCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Guard: redirect if chat is not enabled
+        if (!Options.Value.Chat.Enabled)
+        {
+            Navigation.NavigateTo($"/projects/{ProjectId}");
+            return;
+        }
+
+        _agenticMode = Options.Value.Chat.AgenticMode;
+
+        _project = await ProjectRepository.GetByIdAsync(ProjectId);
+
+        if (_project is not null)
+        {
+            _breadcrumbs =
+            [
+                new BreadcrumbItem("Projects", href: "/projects"),
+                new BreadcrumbItem(_project.Name, href: $"/projects/{ProjectId}"),
+                new BreadcrumbItem("Chat", href: null, disabled: true)
+            ];
+        }
+
+        _loading = false;
+    }
+
+    private async Task SendMessageAsync()
+    {
+        var userText = _inputText.Trim();
+        if (string.IsNullOrEmpty(userText) || _isStreaming || _project is null)
+            return;
+
+        _inputText = string.Empty;
+        _isStreaming = true;
+        await InvokeAsync(StateHasChanged);
+
+        // Snapshot of history before adding the new user message
+        var historySnapshot = _messages
+            .Select(m => new ChatTurn(m.Role, m.Content))
+            .ToList();
+
+        _messages.Add(new ChatEntry("user", userText));
+        var assistantEntry = new ChatEntry("assistant", string.Empty) { IsStreaming = true };
+        _messages.Add(assistantEntry);
+
+        await ScrollToBottomAsync();
+
+        _streamCts = new CancellationTokenSource();
+
+        try
+        {
+            await foreach (var evt in ChatService.ChatAsync(
+                userText,
+                _project.Id,
+                _project.Name,
+                historySnapshot,
+                _agenticMode,
+                _streamCts.Token))
+            {
+                if (evt is TextTokenEvent text)
+                {
+                    assistantEntry.IsThinking = false;
+                    assistantEntry.Content += text.Token;
+                }
+                else if (evt is ThinkingEvent thinking)
+                {
+                    assistantEntry.IsThinking = true;
+                    assistantEntry.ThinkingSteps.Add((thinking.Message, thinking.SearchIndex));
+                }
+                await InvokeAsync(StateHasChanged);
+                await ScrollToBottomAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (string.IsNullOrEmpty(assistantEntry.Content))
+                assistantEntry.Content = "(cancelled)";
+        }
+        catch (Exception ex)
+        {
+            assistantEntry.Content = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            assistantEntry.IsStreaming = false;
+            _isStreaming = false;
+            _streamCts?.Dispose();
+            _streamCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_inputText) && !_isStreaming)
+        {
+            await SendMessageAsync();
+        }
+    }
+
+    private void NewChat()
+    {
+        _streamCts?.Cancel();
+        _messages.Clear();
+        _inputText = string.Empty;
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("scrollToBottom", "chat-messages");
+        }
+        catch
+        {
+            // JS interop may fail during prerender — ignore
+        }
+    }
+
+    private string GetProviderLabel()
+    {
+        var chat = Options.Value.Chat;
+        return chat.Provider switch
+        {
+            ChatProvider.OpenAI      => $"OpenAI · {chat.OpenAI.Model}",
+            ChatProvider.AzureOpenAI => $"Azure OpenAI · {chat.AzureOpenAI.DeploymentName}",
+            ChatProvider.Anthropic   => $"Anthropic · {chat.Anthropic.Model}",
+            ChatProvider.Ollama      => $"Ollama · {chat.Ollama.Model}",
+            _                        => "Fake (dev)"
+        };
+    }
+
+    private static string GetBubbleStyle(string role) => role == "user"
+        ? "background: var(--mud-palette-primary); color: var(--mud-palette-primary-text); border-radius: 16px 16px 4px 16px; max-width: 72%; word-break: break-word;"
+        : "background: var(--ld-surface); border: 1px solid var(--ld-border); border-radius: 16px 16px 16px 4px; max-width: 82%; word-break: break-word;";
+
+    private static readonly MarkdownPipeline _markdownPipeline =
+        new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    /// <summary>Mutable message entry used during streaming.</summary>
+    private sealed class ChatEntry(string role, string content)
+    {
+        public string Role { get; } = role;
+        public string Content { get; set; } = content;
+        public bool IsStreaming { get; set; }
+        public bool IsThinking { get; set; }
+        public List<(string Message, int SearchIndex)> ThinkingSteps { get; } = [];
+
+        public MarkupString RenderedMarkdown =>
+            new(Markdown.ToHtml(Content, _markdownPipeline));
+    }
+}
