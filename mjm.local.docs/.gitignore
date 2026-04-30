@@ -1,0 +1,51 @@
+## Build output
+bin/
+obj/
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+## JetBrains Rider / IntelliJ
+.idea/
+
+## Rider project settings (keep .idea/.gitignore if present)
+*.iml
+
+## NuGet
+*.nupkg
+*.snupkg
+packages/
+.nuget/
+
+## Publish output
+**/publish/
+**/PublishProfiles/
+
+## Logs
+Logs/
+*.log
+
+## SQLite databases (runtime data, not source)
+*.db
+*.db-shm
+*.db-wal
+
+## HNSW index (runtime artifact)
+*.bin
+
+## Document file storage (runtime data)
+DocumentFiles/
+
+## ASP.NET Core user secrets
+secrets.json
+
+## Environment-specific appsettings with real credentials
+## (keep appsettings.json and appsettings.Development.json as they contain only defaults/placeholders)
+appsettings.Production.json
+appsettings.Staging.json
+appsettings.Local.json

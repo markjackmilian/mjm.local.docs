@@ -5,9 +5,13 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Configuration;
+using Mjm.LocalDocs.Core.Services;
+using Mjm.LocalDocs.Infrastructure.Chat;
+using LocalDocsChatOptions = Mjm.LocalDocs.Core.Configuration.ChatOptions;
 using Mjm.LocalDocs.Infrastructure.Documents;
 using Mjm.LocalDocs.Infrastructure.Embeddings;
 using Mjm.LocalDocs.Infrastructure.FileStorage;
@@ -57,6 +61,9 @@ public static class ServiceCollectionExtensions
 
         // Configure embeddings
         ConfigureEmbeddings(services, options.Embeddings);
+
+        // Configure chat completion
+        ConfigureChat(services, options.Chat);
 
         // Processing services
         services.AddSingleton<IDocumentProcessor>(
@@ -303,6 +310,121 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IEmbeddingService>(
             new SemanticKernelEmbeddingService(embeddingGenerator, embeddingsOptions.Dimension));
+    }
+
+    private static void ConfigureChat(IServiceCollection services, LocalDocsChatOptions chatOptions)
+    {
+        if (!chatOptions.Enabled)
+        {
+            services.AddSingleton<IChatCompletionService, FakeChatCompletionService>();
+        }
+        else
+        {
+            switch (chatOptions.Provider)
+            {
+                case ChatProvider.OpenAI:
+                    ConfigureOpenAIChat(services, chatOptions);
+                    break;
+
+                case ChatProvider.AzureOpenAI:
+                    ConfigureAzureOpenAIChat(services, chatOptions);
+                    break;
+
+                case ChatProvider.Anthropic:
+                    services.AddSingleton<IChatCompletionService>(
+                        new AnthropicChatCompletionService(chatOptions.Anthropic));
+                    break;
+
+                case ChatProvider.Ollama:
+                    ConfigureOllamaChat(services, chatOptions);
+                    break;
+
+                case ChatProvider.Fake:
+                default:
+                    services.AddSingleton<IChatCompletionService, FakeChatCompletionService>();
+                    break;
+            }
+        }
+
+        // Register the agentic-aware chat service as IProjectChatService.
+        // It wraps ProjectChatService (static RAG) and adds an agentic tool-calling path.
+        // IChatClient is resolved as optional — null for Anthropic/Fake (agentic mode disabled gracefully).
+        services.AddScoped<IProjectChatService>(sp =>
+        {
+            var staticService = sp.GetRequiredService<ProjectChatService>();
+            var documentService = sp.GetRequiredService<DocumentService>();
+            var chatClient = sp.GetService<IChatClient>();
+            var options = sp.GetRequiredService<IOptions<LocalDocsOptions>>();
+            var logger = sp.GetRequiredService<ILogger<AgenticProjectChatService>>();
+            return new AgenticProjectChatService(staticService, documentService, chatClient, options, logger);
+        });
+    }
+
+    private static void ConfigureOpenAIChat(IServiceCollection services, LocalDocsChatOptions chatOptions)
+    {
+        var apiKey = chatOptions.OpenAI.ApiKey
+            ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            throw new InvalidOperationException(
+                "OpenAI chat provider requires an API key. " +
+                "Configure 'LocalDocs:Chat:OpenAI:ApiKey' in appsettings.json " +
+                "or set the OPENAI_API_KEY environment variable.");
+        }
+
+        var openAiClient = new OpenAIClient(apiKey);
+        var chatClient = openAiClient.GetChatClient(chatOptions.OpenAI.Model).AsIChatClient();
+
+        services.AddSingleton<IChatClient>(chatClient);
+        services.AddSingleton<IChatCompletionService>(
+            new MicrosoftAIChatCompletionService(chatClient));
+    }
+
+    private static void ConfigureAzureOpenAIChat(IServiceCollection services, LocalDocsChatOptions chatOptions)
+    {
+        var endpoint = chatOptions.AzureOpenAI.Endpoint
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+
+        var apiKey = chatOptions.AzureOpenAI.ApiKey
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+
+        if (string.IsNullOrEmpty(endpoint))
+        {
+            throw new InvalidOperationException(
+                "Azure OpenAI chat provider requires an endpoint. " +
+                "Configure 'LocalDocs:Chat:AzureOpenAI:Endpoint' in appsettings.json " +
+                "or set the AZURE_OPENAI_ENDPOINT environment variable.");
+        }
+
+        if (string.IsNullOrEmpty(apiKey))
+        {
+            throw new InvalidOperationException(
+                "Azure OpenAI chat provider requires an API key. " +
+                "Configure 'LocalDocs:Chat:AzureOpenAI:ApiKey' in appsettings.json " +
+                "or set the AZURE_OPENAI_API_KEY environment variable.");
+        }
+
+        var azureClient = new AzureOpenAIClient(
+            new Uri(endpoint),
+            new ApiKeyCredential(apiKey));
+
+        var chatClient = azureClient.GetChatClient(chatOptions.AzureOpenAI.DeploymentName).AsIChatClient();
+
+        services.AddSingleton<IChatClient>(chatClient);
+        services.AddSingleton<IChatCompletionService>(
+            new MicrosoftAIChatCompletionService(chatClient));
+    }
+
+    private static void ConfigureOllamaChat(IServiceCollection services, LocalDocsChatOptions chatOptions)
+    {
+        var endpoint = new Uri(chatOptions.Ollama.Endpoint);
+        var model = chatOptions.Ollama.Model;
+        var chatClient = new OllamaChatClient(endpoint, model);
+
+        services.AddSingleton<IChatClient>(chatClient);
+        services.AddSingleton<IChatCompletionService>(
+            new MicrosoftAIChatCompletionService(chatClient));
     }
 
     /// <summary>

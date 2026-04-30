@@ -5,10 +5,12 @@
 @using System.Security.Cryptography
 @using System.Text
 @using Mjm.LocalDocs.Core.Abstractions
+@using Mjm.LocalDocs.Core.Configuration
 @using Mjm.LocalDocs.Core.Models
 @using Mjm.LocalDocs.Core.Services
 @using Mjm.LocalDocs.Infrastructure.Documents
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.Options
 @inject IProjectRepository ProjectRepository
 @inject DocumentService DocumentService
 @inject CompositeDocumentReader DocumentReader
@@ -16,6 +18,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject IOptions<LocalDocsOptions> LocalDocsOptions
 
 <PageTitle>@(_project?.Name ?? "Project") - Local Docs</PageTitle>
 
@@ -45,14 +48,27 @@ else
 
     <div class="d-flex justify-space-between align-center mb-6">
         <MudText Typo="Typo.h4" Class="ld-heading">@_project.Name</MudText>
-        <MudButton Variant="Variant.Outlined" 
-                   Color="Color.Error" 
-                   StartIcon="@Icons.Material.Rounded.DeleteOutline"
-                   Size="Size.Small"
-                   Style="border-radius: var(--ld-radius-pill);"
-                   OnClick="DeleteProjectAsync">
-            Delete
-        </MudButton>
+        <div class="d-flex gap-2">
+            @if (LocalDocsOptions.Value.Chat.Enabled)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Rounded.Chat"
+                           Size="Size.Small"
+                           Style="border-radius: var(--ld-radius-pill);"
+                           Href="@($"/projects/{ProjectId}/chat")">
+                    Chat
+                </MudButton>
+            }
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Error"
+                       StartIcon="@Icons.Material.Rounded.DeleteOutline"
+                       Size="Size.Small"
+                       Style="border-radius: var(--ld-radius-pill);"
+                       OnClick="DeleteProjectAsync">
+                Delete
+            </MudButton>
+        </div>
     </div>
 
     <MudGrid Spacing="4">
