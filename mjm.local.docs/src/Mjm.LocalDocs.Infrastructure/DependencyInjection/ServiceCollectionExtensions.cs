@@ -258,7 +258,8 @@ public static class ServiceCollectionExtensions
             .AsIEmbeddingGenerator();
 
         services.AddSingleton<IEmbeddingService>(
-            new SemanticKernelEmbeddingService(embeddingGenerator, embeddingsOptions.Dimension));
+            new SemanticKernelEmbeddingService(
+                embeddingGenerator, embeddingsOptions.Dimension, embeddingsOptions.MaxBatchSize));
     }
 
     private static void ConfigureAzureOpenAIEmbeddings(
@@ -296,7 +297,8 @@ public static class ServiceCollectionExtensions
             .AsIEmbeddingGenerator();
 
         services.AddSingleton<IEmbeddingService>(
-            new SemanticKernelEmbeddingService(embeddingGenerator, embeddingsOptions.Dimension));
+            new SemanticKernelEmbeddingService(
+                embeddingGenerator, embeddingsOptions.Dimension, embeddingsOptions.MaxBatchSize));
     }
 
     private static void ConfigureOllamaEmbeddings(
@@ -309,7 +311,8 @@ public static class ServiceCollectionExtensions
         var embeddingGenerator = new OllamaEmbeddingGenerator(endpoint, model);
 
         services.AddSingleton<IEmbeddingService>(
-            new SemanticKernelEmbeddingService(embeddingGenerator, embeddingsOptions.Dimension));
+            new SemanticKernelEmbeddingService(
+                embeddingGenerator, embeddingsOptions.Dimension, embeddingsOptions.MaxBatchSize));
     }
 
     private static void ConfigureChat(IServiceCollection services, LocalDocsChatOptions chatOptions)

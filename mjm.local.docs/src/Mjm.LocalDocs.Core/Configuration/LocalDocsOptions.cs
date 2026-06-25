@@ -68,6 +68,12 @@ public sealed class EmbeddingsOptions
     public int Dimension { get; init; } = 1536;
 
     /// <summary>
+    /// Maximum number of texts sent to the embedding provider per request.
+    /// Large documents are split into sub-batches of this size.
+    /// </summary>
+    public int MaxBatchSize { get; init; } = 64;
+
+    /// <summary>
     /// OpenAI-specific configuration.
     /// </summary>
     public OpenAIEmbeddingsOptions OpenAI { get; init; } = new();
