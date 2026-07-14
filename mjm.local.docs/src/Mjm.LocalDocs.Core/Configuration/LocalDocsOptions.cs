@@ -449,6 +449,20 @@ public sealed class OpenAIChatOptions
     /// The chat model to use (e.g., gpt-4o, gpt-4o-mini).
     /// </summary>
     public string Model { get; init; } = "gpt-4o-mini";
+
+    /// <summary>
+    /// Reasoning effort for reasoning-capable models (e.g., gpt-5.6-luna).
+    /// Supported values: <c>minimal</c>, <c>low</c>, <c>medium</c>, <c>high</c>.
+    /// <para>
+    /// When set, the client uses the OpenAI Responses API (<c>/v1/responses</c>) instead of
+    /// Chat Completions (<c>/v1/chat/completions</c>), because reasoning models reject the combination
+    /// of function tools and reasoning effort on the Chat Completions endpoint.
+    /// </para>
+    /// <para>
+    /// Leave null/empty for non-reasoning models (e.g., gpt-4o-mini) to keep using Chat Completions.
+    /// </para>
+    /// </summary>
+    public string? ReasoningEffort { get; init; }
 }
 
 /// <summary>

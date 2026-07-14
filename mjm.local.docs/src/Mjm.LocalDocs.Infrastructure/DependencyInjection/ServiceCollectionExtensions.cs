@@ -21,6 +21,7 @@ using Mjm.LocalDocs.Infrastructure.Persistence.Repositories;
 using Mjm.LocalDocs.Infrastructure.VectorStore;
 using Mjm.LocalDocs.Infrastructure.VectorStore.Hnsw;
 using OpenAI;
+using OpenAI.Responses;
 
 namespace Mjm.LocalDocs.Infrastructure.DependencyInjection;
 
@@ -374,12 +375,50 @@ public static class ServiceCollectionExtensions
         }
 
         var openAiClient = new OpenAIClient(apiKey);
-        var chatClient = openAiClient.GetChatClient(chatOptions.OpenAI.Model).AsIChatClient();
+        var chatClient = BuildOpenAIChatClient(openAiClient, chatOptions.OpenAI.Model, chatOptions.OpenAI.ReasoningEffort);
 
         services.AddSingleton<IChatClient>(chatClient);
         services.AddSingleton<IChatCompletionService>(
             new MicrosoftAIChatCompletionService(chatClient));
     }
+
+    /// <summary>
+    /// Builds the OpenAI-backed <see cref="IChatClient"/>.
+    /// When <paramref name="reasoningEffort"/> is set, the Responses API (<c>/v1/responses</c>) is used and the
+    /// reasoning effort is injected into every request; reasoning models reject function tools + reasoning effort
+    /// on the Chat Completions endpoint. Otherwise the classic Chat Completions client is used (no behavior change).
+    /// </summary>
+#pragma warning disable OPENAI001 // Responses API + reasoning types are experimental in the OpenAI SDK.
+    private static IChatClient BuildOpenAIChatClient(OpenAIClient openAiClient, string model, string? reasoningEffort)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningEffort))
+        {
+            return openAiClient.GetChatClient(model).AsIChatClient();
+        }
+
+        var effort = ParseReasoningEffort(reasoningEffort);
+
+        return openAiClient.GetResponsesClient(model).AsIChatClient()
+            .AsBuilder()
+            .ConfigureOptions(o => o.RawRepresentationFactory = _ => new CreateResponseOptions
+            {
+                ReasoningOptions = new ResponseReasoningOptions { ReasoningEffortLevel = effort }
+            })
+            .Build();
+    }
+
+    private static ResponseReasoningEffortLevel ParseReasoningEffort(string value) =>
+        value.Trim().ToLowerInvariant() switch
+        {
+            "minimal" => ResponseReasoningEffortLevel.Minimal,
+            "low" => ResponseReasoningEffortLevel.Low,
+            "medium" => ResponseReasoningEffortLevel.Medium,
+            "high" => ResponseReasoningEffortLevel.High,
+            _ => throw new InvalidOperationException(
+                $"Invalid 'LocalDocs:Chat:OpenAI:ReasoningEffort' value '{value}'. " +
+                "Supported values: minimal, low, medium, high (or leave empty to use Chat Completions).")
+        };
+#pragma warning restore OPENAI001
 
     private static void ConfigureAzureOpenAIChat(IServiceCollection services, LocalDocsChatOptions chatOptions)
     {
