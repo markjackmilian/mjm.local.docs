@@ -68,6 +68,21 @@ public sealed class InMemoryVectorStore : IVectorStore
     }
 
     /// <inheritdoc />
+    public Task<long> CountAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult((long)_embeddings.Count);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> GetExistingChunkIdsAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = chunkIds.Where(_embeddings.ContainsKey).ToList();
+        return Task.FromResult<IReadOnlyList<string>>(existing);
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<VectorSearchResult>> SearchAsync(
         ReadOnlyMemory<float> queryEmbedding,
         int limit = 10,

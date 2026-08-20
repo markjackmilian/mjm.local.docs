@@ -190,6 +190,26 @@ public sealed class HnswVectorStore : IVectorStore, IDisposable
     }
 
     /// <inheritdoc />
+    public Task<long> CountAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return Task.FromResult((long)_graph.Count);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<string>> GetExistingChunkIdsAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var all = _graph.GetAllIds().ToHashSet(StringComparer.Ordinal);
+        var existing = chunkIds.Where(all.Contains).ToList();
+        return Task.FromResult<IReadOnlyList<string>>(existing);
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<VectorSearchResult>> SearchAsync(
         ReadOnlyMemory<float> queryEmbedding,
         int limit = 10,

@@ -51,6 +51,28 @@ public interface IVectorStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Gets the total number of embeddings currently stored.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of stored embeddings.</returns>
+    Task<long> CountAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the subset of the supplied chunk identifiers that have an embedding stored.
+    /// </summary>
+    /// <remarks>
+    /// Callers are responsible for batching: implementations may build one database parameter
+    /// per identifier, and SQL Server caps a command at 2100 parameters.
+    /// Pass at most a few hundred identifiers per call.
+    /// </remarks>
+    /// <param name="chunkIds">The chunk identifiers to probe.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The identifiers that have an embedding, in no guaranteed order.</returns>
+    Task<IReadOnlyList<string>> GetExistingChunkIdsAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Searches for similar embeddings using vector similarity.
     /// </summary>
     /// <param name="queryEmbedding">The query embedding vector.</param>

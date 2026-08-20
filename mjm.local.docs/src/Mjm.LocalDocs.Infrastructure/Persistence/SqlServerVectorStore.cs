@@ -246,6 +246,59 @@ public sealed class SqlServerVectorStore : IVectorStore
     }
 
     /// <inheritdoc />
+    public async Task<long> CountAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        // COUNT_BIG returns bigint, so the scalar maps straight onto long.
+        var sql = $"SELECT COUNT_BIG(*) FROM {FullTableName}";
+
+        await using var command = new SqlCommand(sql, connection);
+        var result = await command.ExecuteScalarAsync(cancellationToken);
+        return result is long count ? count : 0L;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetExistingChunkIdsAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = chunkIds.ToList();
+        if (ids.Count == 0)
+            return [];
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var found = new List<string>();
+
+        // 500 per batch keeps well clear of the 2100 parameter ceiling.
+        foreach (var batch in ids.Chunk(500))
+        {
+            var parameterNames = new string[batch.Length];
+
+            await using var command = new SqlCommand { Connection = connection };
+            for (var i = 0; i < batch.Length; i++)
+            {
+                parameterNames[i] = $"@id{i}";
+                command.Parameters.AddWithValue($"@id{i}", batch[i]);
+            }
+
+            command.CommandText =
+                $"SELECT chunk_id FROM {FullTableName} WHERE chunk_id IN ({string.Join(", ", parameterNames)})";
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                found.Add(reader.GetString(0));
+            }
+        }
+
+        return found;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<VectorSearchResult>> SearchAsync(
         ReadOnlyMemory<float> queryEmbedding,
         int limit = 10,

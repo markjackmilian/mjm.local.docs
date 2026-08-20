@@ -384,6 +384,62 @@ public sealed class SqlServerVectorStoreTests : IAsyncLifetime
 
     #endregion
 
+    #region CountAsync Tests
+
+    [Fact]
+    public async Task CountAsync_WithNoEmbeddings_ReturnsZero()
+    {
+        SkipIfNotAvailable();
+
+        var count = await _sut!.CountAsync();
+
+        Assert.Equal(0L, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_AfterUpserts_ReturnsNumberOfEmbeddings()
+    {
+        SkipIfNotAvailable();
+
+        await _sut!.UpsertAsync("doc-1_chunk_0", CreateTestEmbedding(1));
+        await _sut.UpsertAsync("doc-1_chunk_1", CreateTestEmbedding(2));
+
+        var count = await _sut.CountAsync();
+
+        Assert.Equal(2L, count);
+    }
+
+    #endregion
+
+    #region GetExistingChunkIdsAsync Tests
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_ReturnsOnlyStoredIds()
+    {
+        SkipIfNotAvailable();
+
+        await _sut!.UpsertAsync("doc-1_chunk_0", CreateTestEmbedding(1));
+
+        var existing = await _sut.GetExistingChunkIdsAsync(
+            ["doc-1_chunk_0", "doc-1_chunk_1", "doc-2_chunk_0"]);
+
+        Assert.Equal(["doc-1_chunk_0"], existing);
+    }
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_WithEmptyInput_ReturnsEmpty()
+    {
+        SkipIfNotAvailable();
+
+        await _sut!.UpsertAsync("doc-1_chunk_0", CreateTestEmbedding(1));
+
+        var existing = await _sut.GetExistingChunkIdsAsync([]);
+
+        Assert.Empty(existing);
+    }
+
+    #endregion
+
     #region SqlServerOptions Tests
 
     [Fact]

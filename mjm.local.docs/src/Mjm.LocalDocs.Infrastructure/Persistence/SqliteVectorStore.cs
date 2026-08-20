@@ -134,6 +134,56 @@ public sealed class SqliteVectorStore : IVectorStore, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<long> CountAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+
+        await using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM chunk_embeddings";
+
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        return result is long count ? count : 0L;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetExistingChunkIdsAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureInitializedAsync(cancellationToken);
+
+        var ids = chunkIds.ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var found = new List<string>();
+
+        // Batch so a large probe cannot exceed the provider's parameter limit.
+        foreach (var batch in ids.Chunk(500))
+        {
+            await using var cmd = _connection.CreateCommand();
+
+            var parameterNames = new string[batch.Length];
+            for (var i = 0; i < batch.Length; i++)
+            {
+                parameterNames[i] = $"@id{i}";
+                cmd.Parameters.AddWithValue($"@id{i}", batch[i]);
+            }
+
+            cmd.CommandText =
+                $"SELECT chunk_id FROM chunk_embeddings WHERE chunk_id IN ({string.Join(", ", parameterNames)})";
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                found.Add(reader.GetString(0));
+            }
+        }
+
+        return found;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<VectorSearchResult>> SearchAsync(
         ReadOnlyMemory<float> queryEmbedding,
         int limit = 10,

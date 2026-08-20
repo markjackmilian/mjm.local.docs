@@ -85,6 +85,16 @@ public sealed class SqliteVectorStoreTests : IDisposable
         return vector;
     }
 
+    private static ReadOnlyMemory<float> Dim128(float seed)
+    {
+        var values = new float[128];
+        for (var i = 0; i < values.Length; i++)
+        {
+            values[i] = seed + (i * 0.001f);
+        }
+        return values;
+    }
+
     #endregion
 
     #region UpsertAsync Tests
@@ -352,6 +362,72 @@ public sealed class SqliteVectorStoreTests : IDisposable
 
         // Assert
         Assert.All(allResults, results => Assert.NotEmpty(results));
+    }
+
+    #endregion
+
+    #region CountAsync Tests
+
+    [Fact]
+    public async Task CountAsync_WithNoEmbeddings_ReturnsZero()
+    {
+        var count = await _sut.CountAsync();
+
+        Assert.Equal(0L, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_AfterUpserts_ReturnsNumberOfEmbeddings()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", Dim128(0.1f));
+        await _sut.UpsertAsync("doc-1_chunk_1", Dim128(0.3f));
+
+        var count = await _sut.CountAsync();
+
+        Assert.Equal(2L, count);
+    }
+
+    #endregion
+
+    #region GetExistingChunkIdsAsync Tests
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_ReturnsOnlyStoredIds()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", Dim128(0.1f));
+
+        var existing = await _sut.GetExistingChunkIdsAsync(
+            ["doc-1_chunk_0", "doc-1_chunk_1", "doc-2_chunk_0"]);
+
+        Assert.Equal(["doc-1_chunk_0"], existing);
+    }
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_WithEmptyInput_ReturnsEmpty()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", Dim128(0.1f));
+
+        var existing = await _sut.GetExistingChunkIdsAsync([]);
+
+        Assert.Empty(existing);
+    }
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_WithSixHundredIds_ReturnsAllStoredOnes()
+    {
+        var stored = new List<string>();
+        for (var i = 0; i < 600; i++)
+        {
+            var chunkId = $"doc-1_chunk_{i}";
+            await _sut.UpsertAsync(chunkId, Dim128(i * 0.0001f));
+            stored.Add(chunkId);
+        }
+
+        var probe = stored.Concat(Enumerable.Range(0, 600).Select(i => $"missing_chunk_{i}")).ToList();
+
+        var existing = await _sut.GetExistingChunkIdsAsync(probe);
+
+        Assert.Equal(600, existing.Count);
     }
 
     #endregion

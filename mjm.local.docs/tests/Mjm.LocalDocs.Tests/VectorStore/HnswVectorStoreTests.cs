@@ -375,4 +375,52 @@ public sealed class HnswVectorStoreTests : IDisposable
     }
 
     #endregion
+
+    #region CountAsync Tests
+
+    [Fact]
+    public async Task CountAsync_WithNoEmbeddings_ReturnsZero()
+    {
+        var count = await _sut.CountAsync();
+
+        Assert.Equal(0L, count);
+    }
+
+    [Fact]
+    public async Task CountAsync_AfterUpserts_ReturnsNumberOfEmbeddings()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", new float[] { 0.1f, 0.2f });
+        await _sut.UpsertAsync("doc-1_chunk_1", new float[] { 0.3f, 0.4f });
+
+        var count = await _sut.CountAsync();
+
+        Assert.Equal(2L, count);
+    }
+
+    #endregion
+
+    #region GetExistingChunkIdsAsync Tests
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_ReturnsOnlyStoredIds()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", new float[] { 0.1f, 0.2f });
+
+        var existing = await _sut.GetExistingChunkIdsAsync(
+            ["doc-1_chunk_0", "doc-1_chunk_1", "doc-2_chunk_0"]);
+
+        Assert.Equal(["doc-1_chunk_0"], existing);
+    }
+
+    [Fact]
+    public async Task GetExistingChunkIdsAsync_WithEmptyInput_ReturnsEmpty()
+    {
+        await _sut.UpsertAsync("doc-1_chunk_0", new float[] { 0.1f, 0.2f });
+
+        var existing = await _sut.GetExistingChunkIdsAsync([]);
+
+        Assert.Empty(existing);
+    }
+
+    #endregion
 }
