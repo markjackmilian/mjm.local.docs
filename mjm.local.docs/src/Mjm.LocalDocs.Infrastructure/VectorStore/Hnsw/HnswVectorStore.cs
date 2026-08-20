@@ -204,6 +204,9 @@ public sealed class HnswVectorStore : IVectorStore, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
+        // HnswGraph.Contains is an O(1) _idToIndex lookup under a read lock. Do not
+        // snapshot GetAllIds() here: that scans and allocates the whole graph on every
+        // probe, on precisely the backend chosen for large corpora.
         var existing = chunkIds.Where(_graph.Contains).ToList();
         return Task.FromResult<IReadOnlyList<string>>(existing);
     }
