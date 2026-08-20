@@ -432,3 +432,6 @@ mjm.local.docs/src/Mjm.LocalDocs.Server/hnsw_index.bin
 *.db
 *.db-shm
 *.db-wal
+
+# Superpowers session state (brainstorm mockups, review diffs, progress ledger)
+.superpowers/
