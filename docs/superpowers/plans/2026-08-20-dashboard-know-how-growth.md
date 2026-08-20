@@ -2142,12 +2142,17 @@ Then add these two privates at the end of the class, before the closing brace:
     /// Chunks a document, persists the chunks, and stores their embeddings.
     /// Shared by insertion and reindexing so indexing logic lives in one place.
     /// </summary>
-    private async Task IndexDocumentAsync(Document document, CancellationToken cancellationToken)
+    /// <returns>
+    /// The number of chunks indexed. Zero means the extracted text produced nothing to
+    /// index — not a failure, but not a searchable document either, which callers that act
+    /// on success must distinguish.
+    /// </returns>
+    private async Task<int> IndexDocumentAsync(Document document, CancellationToken cancellationToken)
     {
         var chunks = await _processor.ChunkDocumentAsync(document, cancellationToken);
 
         if (chunks.Count == 0)
-            return;
+            return 0;
 
         await _repository.AddChunksAsync(chunks, cancellationToken);
 
@@ -2161,6 +2166,8 @@ Then add these two privates at the end of the class, before the closing brace:
             .ToList();
 
         await _vectorStore.UpsertBatchAsync(embeddingsToStore, cancellationToken);
+
+        return chunks.Count;
     }
 
     /// <summary>
@@ -2245,6 +2252,68 @@ Append to `DocumentServiceIndexingTests.cs`:
     }
 
     [Fact]
+    public async Task ReindexDocumentAsync_WhenTextYieldsNoChunks_LeavesTheParentAlone()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        // Extracted text that produces nothing: no throw, but no searchable document either.
+        GivenChunks("doc-2", 0);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // Superseding here would strip the chain's only working index, on exactly the button
+        // the dashboard offers for zero-chunk documents.
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ClosesEveryStillActiveAncestorNotJustTheParent()
+    {
+        // v1 <- v2 <- v3 with two interrupted updates: all three still active, and closing only
+        // v2 would leave v1 and v3 both active and indexed, answering the same query.
+        var version3 = CreateDocument("doc-3", parentDocumentId: "doc-2");
+
+        _repository.GetDocumentAsync("doc-3", Arg.Any<CancellationToken>()).Returns(version3);
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-2", parentDocumentId: "doc-1"));
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-3", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-3");
+
+        await _repository.Received(1).SupersedeDocumentAsync("doc-2", Arg.Any<CancellationToken>());
+        await _repository.Received(1).SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_StripsTheParentIndexBeforeSupersedingIt()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // Superseding first would leave a superseded document still answering searches if the
+        // deletes never ran — invisible to the dashboard and unrepairable.
+        Received.InOrder(() =>
+        {
+            _vectorStore.DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
     public async Task ReindexDocumentAsync_WipesBeforeRebuildingSoRetriesAreIdempotent()
     {
         var document = CreateDocument();
@@ -2282,6 +2351,11 @@ Append to `DocumentServiceIndexingTests.cs`:
 
         await _repository.DidNotReceive().AddChunksAsync(
             Arg.Any<IEnumerable<DocumentChunk>>(), Arg.Any<CancellationToken>());
+
+        // The refusal must precede every destructive call, or a mistaken reindex of a
+        // superseded version would delete an index it was never allowed to touch.
+        await _repository.DidNotReceive().DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2428,13 +2502,20 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
                 $"Document '{documentId}' is superseded; superseded versions are not indexed by design.");
         }
 
-        // Clean slate so a retry after a partial failure cannot duplicate chunks.
-        await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
-        await _repository.DeleteChunksByDocumentAsync(documentId, cancellationToken);
+        int chunkCount;
 
         try
         {
-            await IndexDocumentAsync(document, cancellationToken);
+            // Clean slate so a retry after a partial failure cannot duplicate chunks. Chunks
+            // go first: interrupted here, the document is left with zero chunks, which the
+            // dashboard reports as broken. Deleting embeddings first would leave chunk rows
+            // behind, and a document with chunks reads as healthy while being unreachable.
+            // Both wipes sit inside the try so a failure is compensated and wrapped rather
+            // than escaping as a raw provider exception.
+            await _repository.DeleteChunksByDocumentAsync(documentId, cancellationToken);
+            await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+
+            chunkCount = await IndexDocumentAsync(document, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -2450,35 +2531,57 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
             throw new DocumentIndexingException(documentId, ex);
         }
 
-        await CloseInterruptedUpdateAsync(document, cancellationToken);
+        // Only a reindex that actually produced an index may close the update. Extracted text
+        // that yields no chunks does not throw, but it does not produce a searchable document
+        // either — and superseding the parent here would strip the chain's only working index,
+        // on the very button the dashboard offers for zero-chunk documents.
+        if (chunkCount == 0)
+            return;
+
+        await CloseInterruptedUpdateAsync(document);
     }
 
     /// <summary>
-    /// Completes an update that failed partway: if this document is a version whose parent is
-    /// still active, supersede the parent and remove it from search.
+    /// Completes an update that failed partway by retiring every still-active ancestor of the
+    /// document just reindexed.
     /// </summary>
-    private async Task CloseInterruptedUpdateAsync(
-        Document document,
-        CancellationToken cancellationToken)
+    /// <remarks>
+    /// Walks the whole chain rather than only the immediate parent: two consecutive interrupted
+    /// updates leave more than one ancestor active, and closing only the nearest would leave two
+    /// active indexed versions answering the same query, with the one in between superseded and
+    /// therefore no longer reindexable.
+    /// Uses <see cref="CancellationToken.None"/> throughout, like the compensation, because a
+    /// cancellation landing mid-closure is what strands a half-retired version.
+    /// </remarks>
+    private async Task CloseInterruptedUpdateAsync(Document document)
     {
-        if (document.ParentDocumentId is null)
-            return;
+        var visited = new HashSet<string>(StringComparer.Ordinal) { document.Id };
+        var parentId = document.ParentDocumentId;
 
-        var parent = await _repository.GetDocumentAsync(document.ParentDocumentId, cancellationToken);
+        while (parentId is not null && visited.Add(parentId))
+        {
+            var parent = await _repository.GetDocumentAsync(parentId, CancellationToken.None);
 
-        if (parent is null || parent.IsSuperseded)
-            return;
+            if (parent is null || parent.IsSuperseded)
+                return;
 
-        await _repository.SupersedeDocumentAsync(parent.Id, cancellationToken);
-        await _vectorStore.DeleteByDocumentIdAsync(parent.Id, cancellationToken);
-        await _repository.DeleteChunksByDocumentAsync(parent.Id, cancellationToken);
+            // Strip the index before superseding. Interrupted this way, the parent stays active
+            // and so remains closable on the next reindex; superseding first would leave a
+            // superseded document still answering searches, invisible to the dashboard and
+            // unrepairable, since reindexing a superseded document is refused by design.
+            await _vectorStore.DeleteByDocumentIdAsync(parent.Id, CancellationToken.None);
+            await _repository.DeleteChunksByDocumentAsync(parent.Id, CancellationToken.None);
+            await _repository.SupersedeDocumentAsync(parent.Id, CancellationToken.None);
+
+            parentId = parent.ParentDocumentId;
+        }
     }
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentService"`
-Expected: PASS, 16 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
+Expected: PASS, 19 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
 
 - [ ] **Step 5: Run the whole suite**
 
