@@ -22,6 +22,7 @@
 - **UI language is English.** The existing pages read "Total Size", "QUICK ACTIONS", "RECENT PROJECTS". All new labels follow that, regardless of the language used in planning.
 - **Styling:** reuse the `--ld-*` tokens in `wwwroot/app.css` including their `[data-theme="dark"]` overrides. The only new literals allowed are the two chart palette colours in Task 9 and Task 10.
 - **No bUnit in this repo.** UI tasks (8–11) have no automated tests; they are verified by `dotnet build` plus the manual check written into each task. Do not invent a UI test framework.
+- **`DateTimeOffset` does not translate on the SQLite provider.** `Microsoft.EntityFrameworkCore.Sqlite` 10.0.2 refuses relational comparisons (`>=`), aggregates (`Max`/`Min`), and `ORDER BY` on a `DateTimeOffset` column — it throws rather than risk a wrong answer, because it stores the value as TEXT and cannot guarantee ordering across mixed offsets. Only equality and plain projection translate. SQLite is the default store (`appsettings.json` → `LocalDocs:Storage:Provider: "Sqlite"`), so any date filtering or aggregation must happen **in C# over a narrow column projection**, never in SQL. This is already the house pattern: `EfCoreApiTokenRepository.GetAllAsync` materialises with `ToListAsync` and then sorts by `CreatedAt` in LINQ-to-Objects for exactly this reason. Projecting scalar columns is what keeps this cheap — the bug being removed was materialising `DocumentEntity`, which carries `FileContent`.
 - **Deviation from the spec, deliberate:** the spec named a repository method `GetChunkIdsByDocumentsAsync(ids)` returning flat chunk ids. This plan uses `GetChunkOwnershipAsync(ids)` returning `(DocumentId, ChunkId)` pairs instead, because mapping a chunk id back to its document would otherwise require parsing the `{documentId}_chunk_{index}` convention with `LastIndexOf`. Carrying the owner explicitly removes that fragility. Nothing else in the spec changes.
 
 ---
@@ -515,6 +516,13 @@ public abstract class DocumentRepositoryAggregateTests
     /// <summary>The repository under test, supplied by the concrete fixture.</summary>
     protected abstract IDocumentRepository Sut { get; }
 
+    /// <summary>
+    /// Ensures a project row exists, for fixtures backed by a store that enforces the
+    /// Documents-to-Projects foreign key. The in-memory repository has no such constraint,
+    /// so the default does nothing.
+    /// </summary>
+    protected virtual Task EnsureProjectAsync(string projectId) => Task.CompletedTask;
+
     // All timestamps are UTC on purpose: EF Core stores DateTimeOffset as TEXT on SQLite,
     // so MAX() is lexicographic and only agrees with chronological order at a fixed offset.
     protected static readonly DateTimeOffset Jan = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
@@ -542,6 +550,7 @@ public abstract class DocumentRepositoryAggregateTests
             CreatedAt = createdAt ?? Jan
         };
 
+        await EnsureProjectAsync(projectId);
         await Sut.AddDocumentAsync(document);
 
         if (chunkCount > 0)
@@ -646,6 +655,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Infrastructure.Persistence;
+using Mjm.LocalDocs.Infrastructure.Persistence.Entities;
 using Mjm.LocalDocs.Infrastructure.Persistence.Repositories;
 
 namespace Mjm.LocalDocs.Tests.Repositories;
@@ -674,6 +684,26 @@ public sealed class EfCoreDocumentRepositoryAggregateTests
         _context = new LocalDocsDbContext(options);
         _context.Database.EnsureCreated();
         _repository = new EfCoreDocumentRepository(_context);
+    }
+
+    /// <summary>
+    /// Documents.ProjectId is a real foreign key here, and the shared seed helper invents
+    /// project ids. Create the parent row rather than switching foreign keys off, so the
+    /// fixture exercises the same referential integrity production does.
+    /// </summary>
+    protected override async Task EnsureProjectAsync(string projectId)
+    {
+        if (await _context.Projects.AnyAsync(p => p.Id == projectId))
+            return;
+
+        _context.Projects.Add(new ProjectEntity
+        {
+            Id = projectId,
+            Name = projectId,
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
     }
 
     public void Dispose()
@@ -734,6 +764,10 @@ In `src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs`, add `using Mjm.
     /// Gets one record per document version created at or after the given instant.
     /// Superseded documents are included: the series counts creation events, not present state.
     /// </summary>
+    /// <remarks>
+    /// Implementations must apply the window in memory over a scalar column projection: the
+    /// SQLite provider cannot translate a relational comparison on a <see cref="DateTimeOffset"/>.
+    /// </remarks>
     /// <param name="since">Inclusive lower bound on <see cref="Document.CreatedAt"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Contribution records, in no guaranteed order.</returns>
@@ -752,6 +786,10 @@ In `src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs`, add `using Mjm.
     /// Gets the most recent <see cref="Document.CreatedAt"/> across all documents,
     /// superseded ones included.
     /// </summary>
+    /// <remarks>
+    /// Implementations must aggregate in memory over a scalar column projection: the SQLite
+    /// provider cannot apply <c>Max</c> to a <see cref="DateTimeOffset"/> column.
+    /// </remarks>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The latest creation timestamp, or null when there are no documents.</returns>
     Task<DateTimeOffset?> GetLastContributionAtAsync(CancellationToken cancellationToken = default);
@@ -779,11 +817,16 @@ Add `using Mjm.LocalDocs.Core.Models.Dashboard;` at the top, then add a new regi
         DateTimeOffset since,
         CancellationToken cancellationToken = default)
     {
-        return await _context.Documents
+        // The projection translates; a `Where(d => d.CreatedAt >= since)` does not — the SQLite
+        // provider refuses relational comparisons on DateTimeOffset. So read the two scalar
+        // columns and apply the window in memory. This stays cheap because the projection never
+        // touches FileContent; materialising DocumentEntity is the bug this method exists to avoid.
+        var contributions = await _context.Documents
             .AsNoTracking()
-            .Where(d => d.CreatedAt >= since)
             .Select(d => new DocumentContribution(d.CreatedAt, d.ParentDocumentId == null))
             .ToListAsync(cancellationToken);
+
+        return contributions.Where(c => c.CreatedAt >= since).ToList();
     }
 
     /// <inheritdoc />
@@ -795,12 +838,17 @@ Add `using Mjm.LocalDocs.Core.Models.Dashboard;` at the top, then add a new regi
     }
 
     /// <inheritdoc />
-    public Task<DateTimeOffset?> GetLastContributionAtAsync(CancellationToken cancellationToken = default)
+    public async Task<DateTimeOffset?> GetLastContributionAtAsync(
+        CancellationToken cancellationToken = default)
     {
-        // Cast to nullable so an empty table yields null instead of throwing.
-        return _context.Documents
+        // MaxAsync on a DateTimeOffset column throws on the SQLite provider, so project the
+        // single column and aggregate in memory.
+        var timestamps = await _context.Documents
             .AsNoTracking()
-            .MaxAsync(d => (DateTimeOffset?)d.CreatedAt, cancellationToken);
+            .Select(d => d.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return timestamps.Count == 0 ? null : timestamps.Max();
     }
 
     /// <inheritdoc />
