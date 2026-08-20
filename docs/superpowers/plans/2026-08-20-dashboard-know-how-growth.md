@@ -2299,6 +2299,37 @@ Append to `DocumentServiceIndexingTests.cs`:
     }
 
     [Fact]
+    public async Task ReindexDocumentAsync_WhenProviderTimesOut_WrapsTheTaskCanceledException()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 2);
+        // Same trap as the insert path: a timeout is a provider failure, not a cancellation.
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The request timed out."));
+
+        var ex = await Assert.ThrowsAsync<DocumentIndexingException>(
+            () => _sut.ReindexDocumentAsync("doc-1"));
+
+        Assert.Equal("doc-1", ex.DocumentId);
+        Assert.IsType<TaskCanceledException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenCallerCancels_PropagatesCancellationUnwrapped()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 2);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _sut.ReindexDocumentAsync("doc-1", cts.Token));
+    }
+
+    [Fact]
     public async Task ReindexDocumentAsync_ClosesAnInterruptedUpdateBySupersedingTheParent()
     {
         var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
@@ -2405,13 +2436,16 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
         {
             await IndexDocumentAsync(document, cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await DiscardPartialIndexAsync(documentId);
             throw;
         }
         catch (Exception ex)
         {
+            // The filter above matters here for the same reason it does on the insert path:
+            // an HttpClient timeout throws TaskCanceledException with the caller's token
+            // uncancelled, and a timeout is a provider failure, not a cancellation.
             await DiscardPartialIndexAsync(documentId);
             throw new DocumentIndexingException(documentId, ex);
         }
@@ -2444,7 +2478,7 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentService"`
-Expected: PASS, 13 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
+Expected: PASS, 16 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
 
 - [ ] **Step 5: Run the whole suite**
 
