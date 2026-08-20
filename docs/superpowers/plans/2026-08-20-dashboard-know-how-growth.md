@@ -2267,6 +2267,7 @@ Append to `DocumentServiceIndexingTests.cs`:
         // the dashboard offers for zero-chunk documents.
         await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
         await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2311,6 +2312,51 @@ Append to `DocumentServiceIndexingTests.cs`:
             _repository.DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
             _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
         });
+
+        // The closure must not inherit the caller's token either: a cancellation landing
+        // mid-walk is exactly what strands a half-retired version. Arg.Any would not catch
+        // a regression that threaded the caller's token back in.
+        await _repository.Received(1).SupersedeDocumentAsync(
+            "doc-1", Arg.Is<CancellationToken>(t => t == CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_SkipsAnAlreadyRetiredAncestorAndClosesTheOneAboveIt()
+    {
+        // A walk interrupted after retiring v2 must stay resumable: halting at v2 on the retry
+        // would leave v1 active and indexed with stale content, answering searches, with no
+        // repair call able to reach it.
+        var version3 = CreateDocument("doc-3", parentDocumentId: "doc-2");
+
+        _repository.GetDocumentAsync("doc-3", Arg.Any<CancellationToken>()).Returns(version3);
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-2", parentDocumentId: "doc-1", isSuperseded: true));
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-3", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-3");
+
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-2", Arg.Any<CancellationToken>());
+        await _repository.Received(1).SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WithASelfParentingDocument_DoesNotSupersedeItself()
+    {
+        var selfParenting = CreateDocument("doc-1", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(selfParenting);
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        // The visited set is seeded with the document's own id, so the walk cannot retire the
+        // very version it just rebuilt.
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2562,8 +2608,18 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
         {
             var parent = await _repository.GetDocumentAsync(parentId, CancellationToken.None);
 
-            if (parent is null || parent.IsSuperseded)
+            if (parent is null)
                 return;
+
+            // Skip past an ancestor already retired rather than stopping at it. A walk
+            // interrupted between two ancestors would otherwise be unresumable: the retry
+            // would halt at the one it had already closed and never reach the stale, still
+            // indexed one above it — invisible to the dashboard and beyond any repair call.
+            if (parent.IsSuperseded)
+            {
+                parentId = parent.ParentDocumentId;
+                continue;
+            }
 
             // Strip the index before superseding. Interrupted this way, the parent stays active
             // and so remains closable on the next reindex; superseding first would leave a
@@ -2581,7 +2637,7 @@ In `DocumentService.cs`, add this public method after `UpdateDocumentAsync`:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentService"`
-Expected: PASS, 19 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
+Expected: PASS, 21 tests in `DocumentServiceIndexingTests` plus the pre-existing `DocumentServiceTests`.
 
 - [ ] **Step 5: Run the whole suite**
 
