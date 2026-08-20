@@ -47,6 +47,9 @@ public static class ServiceCollectionExtensions
         // API Token service for MCP authentication
         services.AddScoped<ApiTokenService>();
 
+        // Dashboard read-side metrics (growth series + index health)
+        services.AddScoped<DashboardMetricsService>();
+
         return services;
     }
 }

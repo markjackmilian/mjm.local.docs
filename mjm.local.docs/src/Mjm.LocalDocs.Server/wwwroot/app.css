@@ -52,6 +52,16 @@
     --ld-stat-amber-icon-bg: #FEF3C7;
     --ld-stat-amber-icon: #D97706;
 
+    --ld-stat-violet-bg: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
+    --ld-stat-violet-border: #DDD6FE;
+    --ld-stat-violet-icon-bg: #EDE9FE;
+    --ld-stat-violet-icon: #7C3AED;
+
+    --ld-stat-rose-bg: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%);
+    --ld-stat-rose-border: #FECDD3;
+    --ld-stat-rose-icon-bg: #FFE4E6;
+    --ld-stat-rose-icon: #E11D48;
+
     /* Chip status */
     --ld-chip-success-bg: #ECFDF5;
     --ld-chip-success-text: #059669;
@@ -158,6 +168,16 @@ html.dark {
     --ld-stat-amber-icon-bg: #78350F;
     --ld-stat-amber-icon: #FBBF24;
 
+    --ld-stat-violet-bg: linear-gradient(135deg, #2E1065 0%, #4C1D95 100%);
+    --ld-stat-violet-border: #6D28D9;
+    --ld-stat-violet-icon-bg: #4C1D95;
+    --ld-stat-violet-icon: #A78BFA;
+
+    --ld-stat-rose-bg: linear-gradient(135deg, #4C0519 0%, #881337 100%);
+    --ld-stat-rose-border: #BE123C;
+    --ld-stat-rose-icon-bg: #881337;
+    --ld-stat-rose-icon: #FB7185;
+
     --ld-chip-success-bg: #065F46;
     --ld-chip-success-text: #6EE7B7;
     --ld-chip-warning-bg: #78350F;
@@ -237,11 +257,15 @@ h1:focus { outline: none; }
 .ld-stat-green { background: var(--ld-stat-green-bg); border: 1px solid var(--ld-stat-green-border); }
 .ld-stat-blue { background: var(--ld-stat-blue-bg); border: 1px solid var(--ld-stat-blue-border); }
 .ld-stat-amber { background: var(--ld-stat-amber-bg); border: 1px solid var(--ld-stat-amber-border); }
+.ld-stat-violet { background: var(--ld-stat-violet-bg); border: 1px solid var(--ld-stat-violet-border); }
+.ld-stat-rose { background: var(--ld-stat-rose-bg); border: 1px solid var(--ld-stat-rose-border); }
 
 .ld-stat-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .ld-stat-icon-green { background: var(--ld-stat-green-icon-bg); color: var(--ld-stat-green-icon); }
 .ld-stat-icon-blue { background: var(--ld-stat-blue-icon-bg); color: var(--ld-stat-blue-icon); }
 .ld-stat-icon-amber { background: var(--ld-stat-amber-icon-bg); color: var(--ld-stat-amber-icon); }
+.ld-stat-icon-violet { background: var(--ld-stat-violet-icon-bg); color: var(--ld-stat-violet-icon); }
+.ld-stat-icon-rose { background: var(--ld-stat-rose-icon-bg); color: var(--ld-stat-rose-icon); }
 
 .ld-card-hover { transition: all var(--ld-transition); border: 1px solid var(--ld-border); background: var(--ld-surface); }
 .ld-card-hover:hover { border-color: var(--ld-primary-light); box-shadow: var(--ld-shadow-md); transform: translateY(-2px); }

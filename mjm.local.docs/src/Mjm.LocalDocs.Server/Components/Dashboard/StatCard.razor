@@ -1,0 +1,52 @@
+@* One KPI tile. Extracted from Home.razor, where this markup was triplicated inline. *@
+
+<MudPaper Class="@($"pa-5 ld-stat-{Accent}")" Elevation="0" Style="border-radius: var(--ld-radius-lg); height: 100%;">
+    <div class="d-flex align-center" style="gap: 16px;">
+        <div class="@($"ld-stat-icon ld-stat-icon-{Accent}")">
+            <MudIcon Icon="@Icon" Style="font-size: 1.25rem;" />
+        </div>
+        <div>
+            <div class="d-flex align-center" style="gap: 6px;">
+                <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
+                    @Value
+                </MudText>
+                @if (Delta.HasValue)
+                {
+                    <MudIcon Icon="@DeltaIcon" Style="@($"font-size: 1rem; color: {DeltaColor};")" />
+                }
+            </div>
+            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">@Label</MudText>
+        </div>
+    </div>
+</MudPaper>
+
+@code {
+    /// <summary>MudBlazor icon markup for the tile.</summary>
+    [Parameter, EditorRequired] public string Icon { get; set; } = default!;
+
+    /// <summary>Pre-formatted value. Formatting belongs to the caller, not the tile.</summary>
+    [Parameter, EditorRequired] public string Value { get; set; } = default!;
+
+    /// <summary>Short caption under the value.</summary>
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+
+    /// <summary>Accent name: green, blue, amber, violet or rose.</summary>
+    [Parameter] public string Accent { get; set; } = "blue";
+
+    /// <summary>Optional trend. Positive shows a rising arrow, negative a falling one, zero a flat one.</summary>
+    [Parameter] public int? Delta { get; set; }
+
+    private string DeltaIcon => Delta switch
+    {
+        > 0 => Icons.Material.Rounded.TrendingUp,
+        < 0 => Icons.Material.Rounded.TrendingDown,
+        _ => Icons.Material.Rounded.TrendingFlat
+    };
+
+    private string DeltaColor => Delta switch
+    {
+        > 0 => "var(--ld-stat-green-icon)",
+        < 0 => "var(--ld-stat-rose-icon)",
+        _ => "var(--ld-text-muted)"
+    };
+}
