@@ -1,0 +1,155 @@
+@using Mjm.LocalDocs.Core.Models.Dashboard
+@using Mjm.LocalDocs.Core.Services
+@inject DashboardMetricsService Metrics
+@inject DocumentService Documents
+@inject ISnackbar Snackbar
+
+@* A document can be uploaded and still be unsearchable, if embedding generation failed
+   after its chunks were written. This panel is how that becomes visible and repairable. *@
+
+<MudPaper Class="pa-5" Elevation="0" Style="border-radius: var(--ld-radius-lg); height: 100%;">
+    <div class="d-flex align-center justify-space-between mb-3" style="gap: 8px;">
+        <p class="ld-section-title" style="margin-bottom: 0;">INDEX HEALTH</p>
+        <MudTooltip Text="Re-check every chunk against the vector store">
+            <MudIconButton Icon="@Icons.Material.Rounded.Refresh"
+                           Size="Size.Small"
+                           Disabled="@_busy"
+                           OnClick="@ReviewAsync" />
+        </MudTooltip>
+    </div>
+
+    @if (Health.ActiveDocuments == 0)
+    {
+        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+            No active documents yet.
+        </MudText>
+    }
+    else
+    {
+        <div class="d-flex flex-column align-center mb-3">
+            <MudChart ChartType="ChartType.Donut"
+                      InputData="@DonutData"
+                      InputLabels="@(["Indexed", "Not indexed"])"
+                      ChartOptions="@_chartOptions"
+                      Width="140px"
+                      Height="140px" />
+            <MudText Style="font-size: 1.25rem; font-weight: 700; color: var(--ld-text-primary); line-height: 1;">
+                @IndexedPercent%
+            </MudText>
+            <MudText Style="font-size: 0.75rem; color: var(--ld-text-secondary);">
+                @Health.FullyIndexed of @Health.ActiveDocuments searchable
+            </MudText>
+        </div>
+
+        @if (Health.Broken.Count == 0)
+        {
+            <div class="d-flex align-center" style="gap: 8px;">
+                <MudIcon Icon="@Icons.Material.Rounded.CheckCircle"
+                         Style="font-size: 1rem; color: var(--ld-stat-green-icon);" />
+                <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+                    Everything is indexed.
+                </MudText>
+            </div>
+        }
+        else
+        {
+            <MudText Style="font-size: 0.75rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 6px;">
+                Uploaded but not searchable
+            </MudText>
+
+            @foreach (var document in Health.Broken)
+            {
+                <div class="d-flex align-center justify-space-between" style="gap: 8px; padding: 6px 0; border-top: 1px solid var(--ld-border);">
+                    <MudTooltip Text="@document.FileName">
+                        <MudText Style="font-size: 0.75rem; color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;">
+                            @document.FileName
+                        </MudText>
+                    </MudTooltip>
+                    <MudButton Variant="Variant.Text"
+                               Size="Size.Small"
+                               Disabled="@_busy"
+                               OnClick="@(() => ReindexAsync(document))">
+                        Reindex
+                    </MudButton>
+                </div>
+            }
+        }
+    }
+</MudPaper>
+
+@code {
+    /// <summary>Current index health of the active document set.</summary>
+    [Parameter, EditorRequired] public IndexHealth Health { get; set; } = default!;
+
+    /// <summary>Raised with fresh health after a review or a successful reindex.</summary>
+    [Parameter] public EventCallback<IndexHealth> HealthChanged { get; set; }
+
+    private bool _busy;
+
+    private readonly ChartOptions _chartOptions = new()
+    {
+        ChartPalette = ["#059669", "#E11D48"]
+    };
+
+    private double[] DonutData =>
+    [
+        Health.FullyIndexed,
+        Health.ActiveDocuments - Health.FullyIndexed
+    ];
+
+    private int IndexedPercent => Health.ActiveDocuments == 0
+        ? 100
+        : (int)Math.Round(100.0 * Health.FullyIndexed / Health.ActiveDocuments);
+
+    private async Task ReviewAsync()
+    {
+        _busy = true;
+        try
+        {
+            // Forced reconciliation: the cheap count comparison can miss drift when the
+            // totals happen to agree over different sets.
+            var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
+            await HealthChanged.InvokeAsync(health);
+            Snackbar.Add(
+                health.Broken.Count == 0
+                    ? "All documents are indexed."
+                    : $"{health.Broken.Count} document(s) need reindexing.",
+                health.Broken.Count == 0 ? Severity.Success : Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not check the index: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReindexAsync(DocumentChunkTally document)
+    {
+        _busy = true;
+        try
+        {
+            await Documents.ReindexDocumentAsync(document.DocumentId);
+            Snackbar.Add($"{document.FileName} is searchable again.", Severity.Success);
+
+            var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
+            await HealthChanged.InvokeAsync(health);
+        }
+        catch (DocumentIndexingException ex)
+        {
+            Snackbar.Add(
+                $"Reindexing {document.FileName} failed: {ex.InnerException?.Message ?? ex.Message}",
+                Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Reindexing {document.FileName} failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
