@@ -112,27 +112,22 @@ public sealed class DocumentService
             throw;
         }
 
-        // 3. Split document into chunks (uses ExtractedText, not FileContent)
-        var chunks = await _processor.ChunkDocumentAsync(document, cancellationToken);
-
-        if (chunks.Count == 0)
-            return savedDocument;
-
-        // 4. Store chunks in repository
-        await _repository.AddChunksAsync(chunks, cancellationToken);
-
-        // 5. Generate embeddings for all chunks
-        var texts = chunks.Select(c => c.Content).ToList();
-        var embeddings = await _embeddingService.GenerateEmbeddingsAsync(texts, cancellationToken);
-
-        // 6. Store embeddings in vector store
-        var embeddingsToStore = chunks
-            .Select((chunk, index) => new KeyValuePair<string, ReadOnlyMemory<float>>(
-                chunk.Id,
-                embeddings[index]))
-            .ToList();
-
-        await _vectorStore.UpsertBatchAsync(embeddingsToStore, cancellationToken);
+        // 3. Index the document (chunks + embeddings). On failure the document survives but
+        //    the partial index does not, so it degrades to a clean "not indexed" state.
+        try
+        {
+            await IndexDocumentAsync(document, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            await DiscardPartialIndexAsync(document.Id);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            await DiscardPartialIndexAsync(document.Id);
+            throw new DocumentIndexingException(document.Id, ex);
+        }
 
         return savedDocument;
     }
@@ -353,5 +348,51 @@ public sealed class DocumentService
         CancellationToken cancellationToken = default)
     {
         return _repository.GetProjectsWithDocumentsAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Chunks a document, persists the chunks, and stores their embeddings.
+    /// Shared by insertion and reindexing so indexing logic lives in one place.
+    /// </summary>
+    private async Task IndexDocumentAsync(Document document, CancellationToken cancellationToken)
+    {
+        var chunks = await _processor.ChunkDocumentAsync(document, cancellationToken);
+
+        if (chunks.Count == 0)
+            return;
+
+        await _repository.AddChunksAsync(chunks, cancellationToken);
+
+        var texts = chunks.Select(c => c.Content).ToList();
+        var embeddings = await _embeddingService.GenerateEmbeddingsAsync(texts, cancellationToken);
+
+        var embeddingsToStore = chunks
+            .Select((chunk, index) => new KeyValuePair<string, ReadOnlyMemory<float>>(
+                chunk.Id,
+                embeddings[index]))
+            .ToList();
+
+        await _vectorStore.UpsertBatchAsync(embeddingsToStore, cancellationToken);
+    }
+
+    /// <summary>
+    /// Removes any chunks and embeddings left behind by a failed indexing attempt.
+    /// </summary>
+    /// <remarks>
+    /// Best effort by design: it swallows its own errors so it can never mask the real
+    /// indexing failure, and it ignores the caller's token so a cancellation cannot leave
+    /// the partial index in place.
+    /// </remarks>
+    private async Task DiscardPartialIndexAsync(string documentId)
+    {
+        try
+        {
+            await _vectorStore.DeleteByDocumentIdAsync(documentId, CancellationToken.None);
+            await _repository.DeleteChunksByDocumentAsync(documentId, CancellationToken.None);
+        }
+        catch
+        {
+            // Intentionally ignored: never mask the original indexing failure.
+        }
     }
 }
