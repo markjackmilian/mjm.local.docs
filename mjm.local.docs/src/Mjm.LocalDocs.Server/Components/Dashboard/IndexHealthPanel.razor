@@ -97,12 +97,30 @@
         Health.ActiveDocuments - Health.FullyIndexed
     ];
 
-    private int IndexedPercent => Health.ActiveDocuments == 0
-        ? 100
-        : (int)Math.Round(100.0 * Health.FullyIndexed / Health.ActiveDocuments);
+    private int IndexedPercent
+    {
+        get
+        {
+            if (Health.ActiveDocuments == 0)
+                return 100;
+
+            // Floor, not Round: with 200 active documents and one broken, rounding turns 99.5
+            // into "100%" printed directly above that document in the list below. A panel
+            // claiming full coverage over a non-empty broken list is worse than a blunt number.
+            var percent = (int)Math.Floor(100.0 * Health.FullyIndexed / Health.ActiveDocuments);
+
+            return Health.Broken.Count > 0 ? Math.Min(percent, 99) : percent;
+        }
+    }
 
     private async Task ReviewAsync()
     {
+        // Disabled="@_busy" only reaches the browser after a render round-trip, so a fast
+        // second click can dispatch another handler before it lands. Blazor Server serialises
+        // handlers up to the first await, and _busy is set synchronously, so this guard holds.
+        if (_busy)
+            return;
+
         _busy = true;
         try
         {
@@ -128,24 +146,51 @@
 
     private async Task ReindexAsync(DocumentChunkTally document)
     {
+        // Same round-trip race as above, and here it bites harder: ReindexDocumentAsync wipes
+        // then rebuilds, which is safe to retry sequentially but not to run concurrently. Two
+        // interleaved runs on one document can leave it with no chunks at all while both report
+        // success.
+        if (_busy)
+            return;
+
         _busy = true;
         try
         {
-            await Documents.ReindexDocumentAsync(document.DocumentId);
+            try
+            {
+                await Documents.ReindexDocumentAsync(document.DocumentId);
+            }
+            catch (DocumentIndexingException ex)
+            {
+                // The inner exception carries the real provider error, which is what a person
+                // needs to read — "Ollama refused the connection", not "reindexing failed".
+                Snackbar.Add(
+                    $"Reindexing {document.FileName} failed: {ex.InnerException?.Message ?? ex.Message}",
+                    Severity.Error);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Reindexing {document.FileName} failed: {ex.Message}", Severity.Error);
+                return;
+            }
+
             Snackbar.Add($"{document.FileName} is searchable again.", Severity.Success);
 
-            var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
-            await HealthChanged.InvokeAsync(health);
-        }
-        catch (DocumentIndexingException ex)
-        {
-            Snackbar.Add(
-                $"Reindexing {document.FileName} failed: {ex.InnerException?.Message ?? ex.Message}",
-                Severity.Error);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Reindexing {document.FileName} failed: {ex.Message}", Severity.Error);
+            // Refreshed under its own handler: a failure from here means the panel is stale,
+            // not that the reindex failed. Reporting it as a reindex failure would contradict
+            // the success message the user has just read, about the same document.
+            try
+            {
+                var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
+                await HealthChanged.InvokeAsync(health);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add(
+                    $"Reindexed, but the panel could not refresh: {ex.Message}",
+                    Severity.Warning);
+            }
         }
         finally
         {
