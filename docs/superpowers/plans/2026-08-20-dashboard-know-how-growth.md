@@ -40,8 +40,9 @@
 | `src/Mjm.LocalDocs.Server/Components/Dashboard/IndexHealthPanel.razor` | Donut, broken-document list, reindex actions |
 | `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs` | Bucketing and health logic |
 | `tests/Mjm.LocalDocs.Tests/Services/DocumentServiceIndexingTests.cs` | Pipeline failure, repair, interrupted-update closure |
-| `tests/Mjm.LocalDocs.Tests/Persistence/EfCoreDocumentRepositoryTests.cs` | New aggregates against real SQLite |
-| `tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs` | Behavioural parity for the same aggregates |
+| `tests/Mjm.LocalDocs.Tests/Repositories/DocumentRepositoryAggregateTests.cs` | Abstract base holding every aggregate test, written once |
+| `tests/Mjm.LocalDocs.Tests/Repositories/EfCoreDocumentRepositoryAggregateTests.cs` | Runs the base suite against real SQLite |
+| `tests/Mjm.LocalDocs.Tests/Repositories/InMemoryDocumentRepositoryAggregateTests.cs` | Runs the base suite against the in-memory repository |
 
 **Modified:**
 
@@ -77,7 +78,7 @@
 
 **Interfaces:**
 - Consumes: nothing (first task).
-- Produces: `IVectorStore.CountAsync(CancellationToken) → Task<long>` and `IVectorStore.GetExistingChunkIdsAsync(IEnumerable<string>, CancellationToken) → Task<IReadOnlyList<string>>`. Task 5 consumes both.
+- Produces: `IVectorStore.CountAsync(CancellationToken) → Task<long>` and `IVectorStore.GetExistingChunkIdsAsync(IEnumerable<string>, CancellationToken) → Task<IReadOnlyList<string>>`. Task 4 consumes both.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -383,8 +384,9 @@ git commit -m "Add embedding count and existence probe to IVectorStore"
 - Modify: `src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs`
 - Modify: `src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs`
 - Modify: `src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs`
-- Test: `tests/Mjm.LocalDocs.Tests/Persistence/EfCoreDocumentRepositoryTests.cs`
-- Test: `tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Repositories/DocumentRepositoryAggregateTests.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Repositories/EfCoreDocumentRepositoryAggregateTests.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Repositories/InMemoryDocumentRepositoryAggregateTests.cs`
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
@@ -489,66 +491,35 @@ public sealed record DashboardMetrics(
 
 - [ ] **Step 2: Write the failing tests**
 
-Create `tests/Mjm.LocalDocs.Tests/Persistence/EfCoreDocumentRepositoryTests.cs`:
+Every aggregate test is written **once**, in an abstract base class, and run against both
+implementations. xUnit discovers inherited `[Fact]` methods on each concrete subclass, so this
+produces one test case per implementation: a divergence fails only the subclass it affects.
+That is exactly the parity signal, without copying test bodies between two files.
+
+Create `tests/Mjm.LocalDocs.Tests/Repositories/DocumentRepositoryAggregateTests.cs`:
 
 ```csharp
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
+using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Models;
-using Mjm.LocalDocs.Infrastructure.Persistence;
-using Mjm.LocalDocs.Infrastructure.Persistence.Repositories;
 
-namespace Mjm.LocalDocs.Tests.Persistence;
+namespace Mjm.LocalDocs.Tests.Repositories;
 
 /// <summary>
-/// Integration tests for the dashboard aggregate reads on <see cref="EfCoreDocumentRepository"/>.
-/// Uses a temporary SQLite database file that is cleaned up after each test.
+/// Dashboard aggregate reads, specified once and run against every
+/// <see cref="IDocumentRepository"/> implementation via a concrete subclass.
 /// </summary>
-public sealed class EfCoreDocumentRepositoryTests : IDisposable
+public abstract class DocumentRepositoryAggregateTests
 {
-    private readonly string _testDbPath;
-    private readonly LocalDocsDbContext _context;
-    private readonly EfCoreDocumentRepository _sut;
-
-    public EfCoreDocumentRepositoryTests()
-    {
-        _testDbPath = Path.Combine(Path.GetTempPath(), $"efcore_docrepo_test_{Guid.NewGuid()}.db");
-
-        var options = new DbContextOptionsBuilder<LocalDocsDbContext>()
-            .UseSqlite($"Data Source={_testDbPath}")
-            .Options;
-
-        _context = new LocalDocsDbContext(options);
-        _context.Database.EnsureCreated();
-        _sut = new EfCoreDocumentRepository(_context);
-    }
-
-    public void Dispose()
-    {
-        _context.Dispose();
-        SqliteConnection.ClearAllPools();
-        Thread.Sleep(50);
-
-        try
-        {
-            if (File.Exists(_testDbPath))
-            {
-                File.Delete(_testDbPath);
-            }
-        }
-        catch (IOException)
-        {
-            // Best effort on Windows; the temp file is harmless if it lingers.
-        }
-    }
+    /// <summary>The repository under test, supplied by the concrete fixture.</summary>
+    protected abstract IDocumentRepository Sut { get; }
 
     // All timestamps are UTC on purpose: EF Core stores DateTimeOffset as TEXT on SQLite,
     // so MAX() is lexicographic and only agrees with chronological order at a fixed offset.
-    private static readonly DateTimeOffset Jan = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset Feb = new(2026, 2, 10, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DateTimeOffset Mar = new(2026, 3, 5, 12, 0, 0, TimeSpan.Zero);
+    protected static readonly DateTimeOffset Jan = new(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
+    protected static readonly DateTimeOffset Feb = new(2026, 2, 10, 12, 0, 0, TimeSpan.Zero);
+    protected static readonly DateTimeOffset Mar = new(2026, 3, 5, 12, 0, 0, TimeSpan.Zero);
 
-    private async Task<Document> SeedDocumentAsync(
+    protected async Task SeedDocumentAsync(
         string id,
         string projectId = "proj-1",
         string? parentDocumentId = null,
@@ -569,7 +540,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
             CreatedAt = createdAt ?? Jan
         };
 
-        await _sut.AddDocumentAsync(document);
+        await Sut.AddDocumentAsync(document);
 
         if (chunkCount > 0)
         {
@@ -582,10 +553,8 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
                 FileName = $"{id}.txt"
             });
 
-            await _sut.AddChunksAsync(chunks);
+            await Sut.AddChunksAsync(chunks);
         }
-
-        return document;
     }
 
     [Fact]
@@ -594,7 +563,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
         await SeedDocumentAsync("doc-old", createdAt: Jan);
         await SeedDocumentAsync("doc-new", createdAt: Mar);
 
-        var contributions = await _sut.GetContributionsSinceAsync(Feb);
+        var contributions = await Sut.GetContributionsSinceAsync(Feb);
 
         Assert.Single(contributions);
         Assert.Equal(Mar, contributions[0].CreatedAt);
@@ -606,7 +575,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
         await SeedDocumentAsync("doc-1", createdAt: Feb);
         await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1", createdAt: Mar);
 
-        var contributions = await _sut.GetContributionsSinceAsync(Jan);
+        var contributions = await Sut.GetContributionsSinceAsync(Jan);
 
         Assert.Equal(1, contributions.Count(c => c.IsNewDocument));
         Assert.Equal(1, contributions.Count(c => !c.IsNewDocument));
@@ -617,7 +586,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
     {
         await SeedDocumentAsync("doc-1", isSuperseded: true, createdAt: Feb);
 
-        var contributions = await _sut.GetContributionsSinceAsync(Jan);
+        var contributions = await Sut.GetContributionsSinceAsync(Jan);
 
         Assert.Single(contributions);
     }
@@ -628,7 +597,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
         await SeedDocumentAsync("doc-1");
         await SeedDocumentAsync("doc-2", isSuperseded: true);
 
-        var count = await _sut.CountActiveDocumentsAsync();
+        var count = await Sut.CountActiveDocumentsAsync();
 
         Assert.Equal(1, count);
     }
@@ -636,7 +605,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
     [Fact]
     public async Task GetLastContributionAtAsync_WithNoDocuments_ReturnsNull()
     {
-        var last = await _sut.GetLastContributionAtAsync();
+        var last = await Sut.GetLastContributionAtAsync();
 
         Assert.Null(last);
     }
@@ -647,7 +616,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
         await SeedDocumentAsync("doc-1", createdAt: Jan);
         await SeedDocumentAsync("doc-2", isSuperseded: true, createdAt: Mar);
 
-        var last = await _sut.GetLastContributionAtAsync();
+        var last = await Sut.GetLastContributionAtAsync();
 
         Assert.Equal(Mar, last);
     }
@@ -660,7 +629,7 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
         await SeedDocumentAsync("doc-3", projectId: "proj-b");
         await SeedDocumentAsync("doc-4", projectId: "proj-b", isSuperseded: true);
 
-        var counts = await _sut.GetActiveDocumentCountsByProjectAsync();
+        var counts = await Sut.GetActiveDocumentCountsByProjectAsync();
 
         Assert.Equal(2, counts["proj-a"]);
         Assert.Equal(1, counts["proj-b"]);
@@ -668,11 +637,88 @@ public sealed class EfCoreDocumentRepositoryTests : IDisposable
 }
 ```
 
-Create `tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs` with the **same six aggregate tests**, changing only the fixture: no `IDisposable`, no SQLite, `private readonly InMemoryDocumentRepository _sut = new();`, and `namespace Mjm.LocalDocs.Tests.VectorStore;`. Copy the `SeedDocumentAsync` helper and the three date constants verbatim. Repeat the test bodies rather than sharing a base class — parity between the two implementations is the point, and a shared base would hide a divergence behind one failing run.
+Create `tests/Mjm.LocalDocs.Tests/Repositories/EfCoreDocumentRepositoryAggregateTests.cs`:
 
+```csharp
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Mjm.LocalDocs.Core.Abstractions;
+using Mjm.LocalDocs.Infrastructure.Persistence;
+using Mjm.LocalDocs.Infrastructure.Persistence.Repositories;
+
+namespace Mjm.LocalDocs.Tests.Repositories;
+
+/// <summary>
+/// Runs the shared aggregate suite against <see cref="EfCoreDocumentRepository"/> on a
+/// temporary SQLite database file that is cleaned up after each test.
+/// </summary>
+public sealed class EfCoreDocumentRepositoryAggregateTests
+    : DocumentRepositoryAggregateTests, IDisposable
+{
+    private readonly string _testDbPath;
+    private readonly LocalDocsDbContext _context;
+    private readonly EfCoreDocumentRepository _repository;
+
+    protected override IDocumentRepository Sut => _repository;
+
+    public EfCoreDocumentRepositoryAggregateTests()
+    {
+        _testDbPath = Path.Combine(Path.GetTempPath(), $"efcore_docrepo_test_{Guid.NewGuid()}.db");
+
+        var options = new DbContextOptionsBuilder<LocalDocsDbContext>()
+            .UseSqlite($"Data Source={_testDbPath}")
+            .Options;
+
+        _context = new LocalDocsDbContext(options);
+        _context.Database.EnsureCreated();
+        _repository = new EfCoreDocumentRepository(_context);
+    }
+
+    public void Dispose()
+    {
+        _context.Dispose();
+
+        // Clear connection pool to release the file lock on Windows.
+        SqliteConnection.ClearAllPools();
+        Thread.Sleep(50);
+
+        try
+        {
+            if (File.Exists(_testDbPath))
+            {
+                File.Delete(_testDbPath);
+            }
+        }
+        catch (IOException)
+        {
+            // Best effort: a lingering temp file is harmless.
+        }
+    }
+}
+```
+
+Create `tests/Mjm.LocalDocs.Tests/Repositories/InMemoryDocumentRepositoryAggregateTests.cs`:
+
+```csharp
+using Mjm.LocalDocs.Core.Abstractions;
+using Mjm.LocalDocs.Infrastructure.VectorStore;
+
+namespace Mjm.LocalDocs.Tests.Repositories;
+
+/// <summary>
+/// Runs the shared aggregate suite against <see cref="InMemoryDocumentRepository"/>,
+/// proving behavioural parity with the EF Core implementation.
+/// </summary>
+public sealed class InMemoryDocumentRepositoryAggregateTests : DocumentRepositoryAggregateTests
+{
+    private readonly InMemoryDocumentRepository _repository = new();
+
+    protected override IDocumentRepository Sut => _repository;
+}
+```
 - [ ] **Step 3: Run tests to verify they fail**
 
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryTests"`
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryAggregateTests"`
 Expected: BUILD FAILURE — `'IDocumentRepository' does not contain a definition for 'GetContributionsSinceAsync'`.
 
 - [ ] **Step 4: Add the interface members**
@@ -824,13 +870,13 @@ Add `using Mjm.LocalDocs.Core.Models.Dashboard;` at the top, then add before the
 
 - [ ] **Step 7: Run tests to verify they pass**
 
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryTests"`
-Expected: PASS, 12 tests (6 per implementation).
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryAggregateTests"`
+Expected: PASS, 14 tests (7 per implementation).
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/Mjm.LocalDocs.Core/Models/Dashboard src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs tests/Mjm.LocalDocs.Tests/Persistence tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs
+git add src/Mjm.LocalDocs.Core/Models/Dashboard src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs tests/Mjm.LocalDocs.Tests/Repositories
 git commit -m "Add contribution and count aggregates to IDocumentRepository"
 ```
 
@@ -842,16 +888,17 @@ git commit -m "Add contribution and count aggregates to IDocumentRepository"
 - Modify: `src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs`
 - Modify: `src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs`
 - Modify: `src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs`
-- Test: `tests/Mjm.LocalDocs.Tests/Persistence/EfCoreDocumentRepositoryTests.cs`
-- Test: `tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Repositories/DocumentRepositoryAggregateTests.cs` (append only)
 
 **Interfaces:**
 - Consumes: `DocumentChunkTally` and `ChunkOwnership` from Task 2's read models file.
-- Produces: `CountChunksAsync(CancellationToken) → Task<long>`; `GetActiveDocumentChunkTalliesAsync(CancellationToken) → Task<IReadOnlyList<DocumentChunkTally>>`; `GetChunkOwnershipAsync(IEnumerable<string>, CancellationToken) → Task<IReadOnlyList<ChunkOwnership>>`. Task 5 consumes all three.
+- Produces: `CountChunksAsync(CancellationToken) → Task<long>`; `GetActiveDocumentChunkTalliesAsync(CancellationToken) → Task<IReadOnlyList<DocumentChunkTally>>`; `GetChunkOwnershipAsync(IEnumerable<string>, CancellationToken) → Task<IReadOnlyList<ChunkOwnership>>`. Task 4 consumes all three.
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepositoryTests.cs` (identical bodies — the `SeedDocumentAsync` helper already takes `chunkCount`):
+Append these to the abstract base `tests/Mjm.LocalDocs.Tests/Repositories/DocumentRepositoryAggregateTests.cs`.
+Both concrete subclasses pick them up automatically — nothing is added to either subclass file.
+The `SeedDocumentAsync` helper already takes `chunkCount`.
 
 ```csharp
     [Fact]
@@ -860,7 +907,7 @@ Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepos
         await SeedDocumentAsync("doc-1", chunkCount: 3);
         await SeedDocumentAsync("doc-2", chunkCount: 2);
 
-        var count = await _sut.CountChunksAsync();
+        var count = await Sut.CountChunksAsync();
 
         Assert.Equal(5L, count);
     }
@@ -872,7 +919,7 @@ Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepos
         await SeedDocumentAsync("doc-2", chunkCount: 0);
         await SeedDocumentAsync("doc-3", isSuperseded: true, chunkCount: 4);
 
-        var tallies = await _sut.GetActiveDocumentChunkTalliesAsync();
+        var tallies = await Sut.GetActiveDocumentChunkTalliesAsync();
 
         Assert.Equal(2, tallies.Count);
         Assert.Equal(3, tallies.Single(t => t.DocumentId == "doc-1").ChunkCount);
@@ -884,7 +931,7 @@ Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepos
     {
         await SeedDocumentAsync("doc-1", projectId: "proj-x", chunkCount: 1);
 
-        var tallies = await _sut.GetActiveDocumentChunkTalliesAsync();
+        var tallies = await Sut.GetActiveDocumentChunkTalliesAsync();
 
         var tally = Assert.Single(tallies);
         Assert.Equal("proj-x", tally.ProjectId);
@@ -897,7 +944,7 @@ Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepos
         await SeedDocumentAsync("doc-1", chunkCount: 2);
         await SeedDocumentAsync("doc-2", chunkCount: 1);
 
-        var ownership = await _sut.GetChunkOwnershipAsync(["doc-1"]);
+        var ownership = await Sut.GetChunkOwnershipAsync(["doc-1"]);
 
         Assert.Equal(2, ownership.Count);
         Assert.All(ownership, o => Assert.Equal("doc-1", o.DocumentId));
@@ -909,15 +956,14 @@ Append to **both** `EfCoreDocumentRepositoryTests.cs` and `InMemoryDocumentRepos
     {
         await SeedDocumentAsync("doc-1", chunkCount: 2);
 
-        var ownership = await _sut.GetChunkOwnershipAsync([]);
+        var ownership = await Sut.GetChunkOwnershipAsync([]);
 
         Assert.Empty(ownership);
     }
 ```
-
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryTests"`
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryAggregateTests"`
 Expected: BUILD FAILURE — `'IDocumentRepository' does not contain a definition for 'CountChunksAsync'`.
 
 - [ ] **Step 3: Add the interface members**
@@ -1049,31 +1095,33 @@ Append inside its `#region Dashboard Aggregates`:
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryTests"`
-Expected: PASS, 22 tests (11 per implementation).
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentRepositoryAggregateTests"`
+Expected: PASS, 24 tests (12 per implementation).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs tests/Mjm.LocalDocs.Tests/Persistence tests/Mjm.LocalDocs.Tests/VectorStore/InMemoryDocumentRepositoryTests.cs
+git add src/Mjm.LocalDocs.Core/Abstractions/IDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/Persistence/Repositories/EfCoreDocumentRepository.cs src/Mjm.LocalDocs.Infrastructure/VectorStore/InMemoryDocumentRepository.cs tests/Mjm.LocalDocs.Tests/Repositories
 git commit -m "Add chunk tally aggregates to IDocumentRepository"
 ```
 
 ---
 
-## Task 4: DashboardMetricsService — growth buckets and rolling KPIs
+## Task 4: DashboardMetricsService — index health fast path and probe
 
 **Files:**
 - Create: `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`
 - Test: `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs`
 
 **Interfaces:**
-- Consumes: `GetContributionsSinceAsync`, `CountActiveDocumentsAsync`, `GetLastContributionAtAsync` (Task 2); `GetActiveDocumentChunkTalliesAsync`, `CountChunksAsync` (Task 3); `IVectorStore.CountAsync` (Task 1).
-- Produces: `DashboardMetricsService(IDocumentRepository, IVectorStore, TimeProvider?)` and `GetMetricsAsync(GrowthGranularity, CancellationToken) → Task<DashboardMetrics>`. Tasks 5, 8 and 11 consume it.
+- Consumes: `CountChunksAsync`, `GetActiveDocumentChunkTalliesAsync`, `GetChunkOwnershipAsync` (Task 3); `IVectorStore.CountAsync`, `GetExistingChunkIdsAsync` (Task 1); `IndexHealth`, `DocumentChunkTally` (Task 2).
+- Produces: `DashboardMetricsService(IDocumentRepository repository, IVectorStore vectorStore)` and `GetIndexHealthAsync(bool forceFullReconciliation = false, CancellationToken) → Task<IndexHealth>`. Task 5 extends the constructor with an optional `TimeProvider`; Tasks 10 and 11 consume the service.
 
-In this task `GetIndexHealthAsync` is a stub returning an all-clear so `GetMetricsAsync` compiles and the bucketing tests can run in isolation. Task 5 replaces the stub body.
+This task builds the health half of the service. Task 5 adds the growth half. The order matters:
+health has no dependency on bucketing, so building it first means the service never contains a
+stubbed method or an unused constructor parameter at any point.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
 Create `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs`:
 
@@ -1090,362 +1138,11 @@ namespace Mjm.LocalDocs.Tests.Services;
 /// </summary>
 public sealed class DashboardMetricsServiceTests
 {
-    private static readonly DateTimeOffset Now = new(2026, 8, 20, 10, 0, 0, TimeSpan.Zero);
-
     private readonly IDocumentRepository _repository = Substitute.For<IDocumentRepository>();
     private readonly IVectorStore _vectorStore = Substitute.For<IVectorStore>();
 
-    /// <summary>
-    /// Fixed clock so bucket boundaries are deterministic, without taking a
-    /// dependency on Microsoft.Extensions.TimeProvider.Testing.
-    /// </summary>
-    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
+    private DashboardMetricsService CreateSut() => new(_repository, _vectorStore);
 
-    private DashboardMetricsService CreateSut() =>
-        new(_repository, _vectorStore, new FixedTimeProvider(Now));
-
-    private void GivenContributions(params DocumentContribution[] contributions)
-    {
-        _repository.GetContributionsSinceAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns(contributions.ToList());
-        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
-            .Returns([]);
-        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(0L);
-        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(0L);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Monthly_ReturnsTwelveBucketsOldestFirst()
-    {
-        GivenContributions();
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Equal(12, metrics.Growth.Count);
-        Assert.Equal(new DateTimeOffset(2025, 9, 1, 0, 0, 0, TimeSpan.Zero), metrics.Growth[0].Start);
-        Assert.Equal(new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), metrics.Growth[11].Start);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Monthly_MarksOnlyTheCurrentBucketPartial()
-    {
-        GivenContributions();
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.True(metrics.Growth[11].IsPartial);
-        Assert.All(metrics.Growth.Take(11), b => Assert.False(b.IsPartial));
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Monthly_SplitsNewDocumentsFromVersions()
-    {
-        GivenContributions(
-            new DocumentContribution(new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.Zero), true),
-            new DocumentContribution(new DateTimeOffset(2026, 8, 4, 9, 0, 0, TimeSpan.Zero), true),
-            new DocumentContribution(new DateTimeOffset(2026, 8, 5, 9, 0, 0, TimeSpan.Zero), false));
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Equal(2, metrics.Growth[11].NewDocuments);
-        Assert.Equal(1, metrics.Growth[11].NewVersions);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Monthly_KeepsEmptyBucketsSoStallsStayVisible()
-    {
-        GivenContributions(
-            new DocumentContribution(new DateTimeOffset(2026, 3, 10, 9, 0, 0, TimeSpan.Zero), true));
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        var march = metrics.Growth.Single(b => b.Start.Month == 3 && b.Start.Year == 2026);
-        Assert.Equal(1, march.NewDocuments);
-        Assert.Equal(11, metrics.Growth.Count(b => b.NewDocuments == 0 && b.NewVersions == 0));
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Weekly_BucketsStartOnMonday()
-    {
-        GivenContributions();
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Weekly);
-
-        Assert.Equal(12, metrics.Growth.Count);
-        Assert.All(metrics.Growth, b => Assert.Equal(DayOfWeek.Monday, b.Start.DayOfWeek));
-        // 2026-08-20 is a Thursday, so the current week starts Monday 2026-08-17.
-        Assert.Equal(new DateTimeOffset(2026, 8, 17, 0, 0, 0, TimeSpan.Zero), metrics.Growth[11].Start);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Monthly_ComparesRollingThirtyDayWindows()
-    {
-        GivenContributions(
-            // Inside the last 30 days (on or after 2026-07-21).
-            new DocumentContribution(new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero), true),
-            new DocumentContribution(new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero), true),
-            // Inside the previous 30 days (2026-06-21 .. 2026-07-20).
-            new DocumentContribution(new DateTimeOffset(2026, 7, 1, 9, 0, 0, TimeSpan.Zero), true),
-            // A version, which must not count towards either window.
-            new DocumentContribution(new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.Zero), false));
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Equal(2, metrics.NewInPeriod);
-        Assert.Equal(1, metrics.NewInPreviousPeriod);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_Weekly_ComparesRollingSevenDayWindows()
-    {
-        GivenContributions(
-            new DocumentContribution(new DateTimeOffset(2026, 8, 18, 9, 0, 0, TimeSpan.Zero), true),
-            new DocumentContribution(new DateTimeOffset(2026, 8, 9, 9, 0, 0, TimeSpan.Zero), true));
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Weekly);
-
-        Assert.Equal(1, metrics.NewInPeriod);
-        Assert.Equal(1, metrics.NewInPreviousPeriod);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_SurfacesLastContributionFromOutsideTheChartWindow()
-    {
-        GivenContributions();
-        var ancient = new DateTimeOffset(2024, 2, 1, 9, 0, 0, TimeSpan.Zero);
-        _repository.GetLastContributionAtAsync(Arg.Any<CancellationToken>()).Returns(ancient);
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Equal(ancient, metrics.LastContributionAt);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_WithEmptyKnowledgeBase_ReportsNullLastContribution()
-    {
-        GivenContributions();
-        _repository.GetLastContributionAtAsync(Arg.Any<CancellationToken>())
-            .Returns((DateTimeOffset?)null);
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Null(metrics.LastContributionAt);
-        Assert.Equal(0, metrics.ActiveDocumentCount);
-    }
-
-    [Fact]
-    public async Task GetMetricsAsync_ReadsActiveCountFromTheRepository()
-    {
-        GivenContributions();
-        _repository.CountActiveDocumentsAsync(Arg.Any<CancellationToken>()).Returns(412);
-
-        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
-
-        Assert.Equal(412, metrics.ActiveDocumentCount);
-    }
-}
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
-Expected: BUILD FAILURE — `The type or namespace name 'DashboardMetricsService' could not be found`.
-
-- [ ] **Step 3: Write the implementation**
-
-Create `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`:
-
-```csharp
-using System.Globalization;
-using Mjm.LocalDocs.Core.Abstractions;
-using Mjm.LocalDocs.Core.Models.Dashboard;
-
-namespace Mjm.LocalDocs.Core.Services;
-
-/// <summary>
-/// Computes the home dashboard's growth series and health indicators.
-/// </summary>
-/// <remarks>
-/// Bucketing happens in memory rather than in SQL: date bucketing is provider-specific
-/// (<c>strftime</c> on SQLite, <c>DATEPART</c> on SQL Server) and this application supports
-/// both, so a C# fold keeps the service provider-agnostic.
-/// </remarks>
-public sealed class DashboardMetricsService
-{
-    private const int BucketCount = 12;
-
-    private readonly IDocumentRepository _repository;
-    private readonly IVectorStore _vectorStore;
-    private readonly TimeProvider _timeProvider;
-
-    /// <summary>
-    /// Creates a new <see cref="DashboardMetricsService"/>.
-    /// </summary>
-    /// <param name="repository">Document repository.</param>
-    /// <param name="vectorStore">Vector store, for the embedding count.</param>
-    /// <param name="timeProvider">Clock. Defaults to <see cref="TimeProvider.System"/>.</param>
-    public DashboardMetricsService(
-        IDocumentRepository repository,
-        IVectorStore vectorStore,
-        TimeProvider? timeProvider = null)
-    {
-        _repository = repository;
-        _vectorStore = vectorStore;
-        _timeProvider = timeProvider ?? TimeProvider.System;
-    }
-
-    /// <summary>
-    /// Gets everything the dashboard renders.
-    /// </summary>
-    /// <param name="granularity">Bucket size for the growth chart.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The dashboard payload.</returns>
-    public async Task<DashboardMetrics> GetMetricsAsync(
-        GrowthGranularity granularity,
-        CancellationToken cancellationToken = default)
-    {
-        var now = _timeProvider.GetUtcNow();
-        var firstBucketStart = GetFirstBucketStart(now, granularity);
-
-        var contributions = await _repository.GetContributionsSinceAsync(firstBucketStart, cancellationToken);
-        var growth = BuildBuckets(contributions, firstBucketStart, now, granularity);
-
-        // Rolling windows, not calendar buckets: comparing an in-progress month against a
-        // complete one would report a fictitious drop on the third of every month.
-        var windowDays = granularity == GrowthGranularity.Weekly ? 7 : 30;
-        var currentWindowStart = now.AddDays(-windowDays);
-        var previousWindowStart = now.AddDays(-windowDays * 2);
-
-        var newInPeriod = contributions.Count(c =>
-            c.IsNewDocument && c.CreatedAt >= currentWindowStart);
-
-        var newInPreviousPeriod = contributions.Count(c =>
-            c.IsNewDocument && c.CreatedAt >= previousWindowStart && c.CreatedAt < currentWindowStart);
-
-        var activeCount = await _repository.CountActiveDocumentsAsync(cancellationToken);
-        var lastContribution = await _repository.GetLastContributionAtAsync(cancellationToken);
-        var health = await GetIndexHealthAsync(forceFullReconciliation: false, cancellationToken);
-
-        return new DashboardMetrics(
-            activeCount,
-            newInPeriod,
-            newInPreviousPeriod,
-            lastContribution,
-            health,
-            growth);
-    }
-
-    /// <summary>
-    /// Reports which active documents are not fully searchable.
-    /// </summary>
-    /// <param name="forceFullReconciliation">
-    /// When true, probes every chunk instead of trusting the count comparison.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The index health of the active document set.</returns>
-    public async Task<IndexHealth> GetIndexHealthAsync(
-        bool forceFullReconciliation = false,
-        CancellationToken cancellationToken = default)
-    {
-        // Replaced in full by Task 5.
-        var tallies = await _repository.GetActiveDocumentChunkTalliesAsync(cancellationToken);
-        return new IndexHealth(tallies.Count, tallies.Count, []);
-    }
-
-    private static DateTimeOffset GetFirstBucketStart(
-        DateTimeOffset now,
-        GrowthGranularity granularity)
-    {
-        if (granularity == GrowthGranularity.Monthly)
-        {
-            var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, now.Offset);
-            return startOfMonth.AddMonths(-(BucketCount - 1));
-        }
-
-        return StartOfWeek(now).AddDays(-7 * (BucketCount - 1));
-    }
-
-    private static DateTimeOffset StartOfWeek(DateTimeOffset value)
-    {
-        var daysSinceMonday = ((int)value.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return new DateTimeOffset(value.Date.AddDays(-daysSinceMonday), value.Offset);
-    }
-
-    private static IReadOnlyList<GrowthBucket> BuildBuckets(
-        IReadOnlyList<DocumentContribution> contributions,
-        DateTimeOffset firstBucketStart,
-        DateTimeOffset now,
-        GrowthGranularity granularity)
-    {
-        var buckets = new List<GrowthBucket>(BucketCount);
-
-        for (var i = 0; i < BucketCount; i++)
-        {
-            var start = granularity == GrowthGranularity.Monthly
-                ? firstBucketStart.AddMonths(i)
-                : firstBucketStart.AddDays(7 * i);
-
-            var end = granularity == GrowthGranularity.Monthly
-                ? start.AddMonths(1)
-                : start.AddDays(7);
-
-            var inBucket = contributions
-                .Where(c => c.CreatedAt >= start && c.CreatedAt < end)
-                .ToList();
-
-            // Empty buckets are kept, never collapsed: a five-month stall must stay visible.
-            buckets.Add(new GrowthBucket(
-                start,
-                FormatLabel(start, granularity),
-                inBucket.Count(c => c.IsNewDocument),
-                inBucket.Count(c => !c.IsNewDocument),
-                now < end));
-        }
-
-        return buckets;
-    }
-
-    private static string FormatLabel(DateTimeOffset start, GrowthGranularity granularity)
-    {
-        return granularity == GrowthGranularity.Monthly
-            ? start.ToString("MMM", CultureInfo.CurrentCulture)
-            : start.ToString("dd/MM", CultureInfo.CurrentCulture);
-    }
-}
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
-Expected: PASS, 10 tests.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs
-git commit -m "Add dashboard metrics service with growth buckets and rolling KPIs"
-```
-
----
-
-## Task 5: DashboardMetricsService — index health fast path and probe
-
-**Files:**
-- Modify: `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`
-- Test: `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs`
-
-**Interfaces:**
-- Consumes: `CountChunksAsync`, `GetActiveDocumentChunkTalliesAsync`, `GetChunkOwnershipAsync` (Task 3); `IVectorStore.CountAsync`, `GetExistingChunkIdsAsync` (Task 1).
-- Produces: the real `GetIndexHealthAsync(bool, CancellationToken) → Task<IndexHealth>`. Task 10 consumes it.
-
-- [ ] **Step 1: Write the failing tests**
-
-Append to `DashboardMetricsServiceTests.cs`:
-
-```csharp
     private static DocumentChunkTally Tally(string id, int chunkCount) =>
         new(id, "proj-1", $"{id}.txt", chunkCount);
 
@@ -1582,24 +1279,55 @@ Append to `DashboardMetricsServiceTests.cs`:
         Assert.Equal(0, health.FullyIndexed);
         Assert.Empty(health.Broken);
     }
+}
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
-Expected: FAIL. `GetIndexHealthAsync_FlagsDocumentsWithZeroChunks` fails with "Expected 1, Actual 2" on `FullyIndexed`, because the stub reports everything as healthy.
+Expected: BUILD FAILURE — `The type or namespace name 'DashboardMetricsService' could not be found`.
 
-- [ ] **Step 3: Replace the stub with the real implementation**
+- [ ] **Step 3: Write the implementation**
 
-In `DashboardMetricsService.cs`, add the batch-size constant next to `BucketCount`:
+Create `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`:
 
 ```csharp
+using Mjm.LocalDocs.Core.Abstractions;
+using Mjm.LocalDocs.Core.Models.Dashboard;
+
+namespace Mjm.LocalDocs.Core.Services;
+
+/// <summary>
+/// Computes the home dashboard's growth series and health indicators.
+/// </summary>
+public sealed class DashboardMetricsService
+{
     private const int ProbeBatchSize = 500;
-```
 
-Replace the whole stubbed `GetIndexHealthAsync` body with:
+    private readonly IDocumentRepository _repository;
+    private readonly IVectorStore _vectorStore;
 
-```csharp
+    /// <summary>
+    /// Creates a new <see cref="DashboardMetricsService"/>.
+    /// </summary>
+    /// <param name="repository">Document repository.</param>
+    /// <param name="vectorStore">Vector store, for the embedding count and existence probe.</param>
+    public DashboardMetricsService(
+        IDocumentRepository repository,
+        IVectorStore vectorStore)
+    {
+        _repository = repository;
+        _vectorStore = vectorStore;
+    }
+
+    /// <summary>
+    /// Reports which active documents are not fully searchable.
+    /// </summary>
+    /// <param name="forceFullReconciliation">
+    /// When true, probes every chunk instead of trusting the count comparison.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The index health of the active document set.</returns>
     public async Task<IndexHealth> GetIndexHealthAsync(
         bool forceFullReconciliation = false,
         CancellationToken cancellationToken = default)
@@ -1660,12 +1388,13 @@ Replace the whole stubbed `GetIndexHealthAsync` body with:
 
         return candidates.Where(c => affected.Contains(c.DocumentId)).ToList();
     }
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
-Expected: PASS, 17 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1676,6 +1405,371 @@ git commit -m "Add index health reconciliation to dashboard metrics service"
 
 ---
 
+## Task 5: DashboardMetricsService — growth buckets and rolling KPIs
+
+**Files:**
+- Modify: `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs`
+
+**Interfaces:**
+- Consumes: `GetContributionsSinceAsync`, `CountActiveDocumentsAsync`, `GetLastContributionAtAsync` (Task 2); `GetIndexHealthAsync` (Task 4).
+- Produces: an optional third constructor parameter `TimeProvider? timeProvider = null`, and `GetMetricsAsync(GrowthGranularity, CancellationToken) → Task<DashboardMetrics>`. Tasks 8 and 11 consume these.
+
+The constructor gains the clock in this task rather than in Task 4, so the field is used the
+moment it exists. The parameter is optional, so Task 4's `CreateSut()` keeps compiling; Step 1
+below routes it through a fixed clock so bucket boundaries are deterministic.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs`, add the fixed clock and
+the `Now` anchor, and change `CreateSut()` to use them. Replace the existing `CreateSut()` line
+with:
+
+```csharp
+    private static readonly DateTimeOffset Now = new(2026, 8, 20, 10, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
+    /// Fixed clock so bucket boundaries are deterministic, without taking a
+    /// dependency on Microsoft.Extensions.TimeProvider.Testing.
+    /// </summary>
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private DashboardMetricsService CreateSut() =>
+        new(_repository, _vectorStore, new FixedTimeProvider(Now));
+
+    private void GivenContributions(params DocumentContribution[] contributions)
+    {
+        _repository.GetContributionsSinceAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(contributions.ToList());
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(0L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(0L);
+    }
+```
+
+Then append these tests to the same class:
+
+```csharp
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_ReturnsTwelveBucketsOldestFirst()
+    {
+        GivenContributions();
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal(12, metrics.Growth.Count);
+        Assert.Equal(new DateTimeOffset(2025, 9, 1, 0, 0, 0, TimeSpan.Zero), metrics.Growth[0].Start);
+        Assert.Equal(new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), metrics.Growth[11].Start);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_MarksOnlyTheCurrentBucketPartial()
+    {
+        GivenContributions();
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.True(metrics.Growth[11].IsPartial);
+        Assert.All(metrics.Growth.Take(11), b => Assert.False(b.IsPartial));
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_SplitsNewDocumentsFromVersions()
+    {
+        GivenContributions(
+            new DocumentContribution(new DateTimeOffset(2026, 8, 3, 9, 0, 0, TimeSpan.Zero), true),
+            new DocumentContribution(new DateTimeOffset(2026, 8, 4, 9, 0, 0, TimeSpan.Zero), true),
+            new DocumentContribution(new DateTimeOffset(2026, 8, 5, 9, 0, 0, TimeSpan.Zero), false));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal(2, metrics.Growth[11].NewDocuments);
+        Assert.Equal(1, metrics.Growth[11].NewVersions);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_KeepsEmptyBucketsSoStallsStayVisible()
+    {
+        GivenContributions(
+            new DocumentContribution(new DateTimeOffset(2026, 3, 10, 9, 0, 0, TimeSpan.Zero), true));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        var march = metrics.Growth.Single(b => b.Start.Month == 3 && b.Start.Year == 2026);
+        Assert.Equal(1, march.NewDocuments);
+        Assert.Equal(11, metrics.Growth.Count(b => b.NewDocuments == 0 && b.NewVersions == 0));
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Weekly_BucketsStartOnMonday()
+    {
+        GivenContributions();
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Weekly);
+
+        Assert.Equal(12, metrics.Growth.Count);
+        Assert.All(metrics.Growth, b => Assert.Equal(DayOfWeek.Monday, b.Start.DayOfWeek));
+        // 2026-08-20 is a Thursday, so the current week starts Monday 2026-08-17.
+        Assert.Equal(new DateTimeOffset(2026, 8, 17, 0, 0, 0, TimeSpan.Zero), metrics.Growth[11].Start);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_ComparesRollingThirtyDayWindows()
+    {
+        GivenContributions(
+            // Inside the last 30 days (on or after 2026-07-21).
+            new DocumentContribution(new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero), true),
+            new DocumentContribution(new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero), true),
+            // Inside the previous 30 days (2026-06-21 .. 2026-07-20).
+            new DocumentContribution(new DateTimeOffset(2026, 7, 1, 9, 0, 0, TimeSpan.Zero), true),
+            // A version, which must not count towards either window.
+            new DocumentContribution(new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.Zero), false));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal(2, metrics.NewInPeriod);
+        Assert.Equal(1, metrics.NewInPreviousPeriod);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Weekly_ComparesRollingSevenDayWindows()
+    {
+        GivenContributions(
+            new DocumentContribution(new DateTimeOffset(2026, 8, 18, 9, 0, 0, TimeSpan.Zero), true),
+            new DocumentContribution(new DateTimeOffset(2026, 8, 9, 9, 0, 0, TimeSpan.Zero), true));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Weekly);
+
+        Assert.Equal(1, metrics.NewInPeriod);
+        Assert.Equal(1, metrics.NewInPreviousPeriod);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_SurfacesLastContributionFromOutsideTheChartWindow()
+    {
+        GivenContributions();
+        var ancient = new DateTimeOffset(2024, 2, 1, 9, 0, 0, TimeSpan.Zero);
+        _repository.GetLastContributionAtAsync(Arg.Any<CancellationToken>()).Returns(ancient);
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal(ancient, metrics.LastContributionAt);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_WithEmptyKnowledgeBase_ReportsNullLastContribution()
+    {
+        GivenContributions();
+        _repository.GetLastContributionAtAsync(Arg.Any<CancellationToken>())
+            .Returns((DateTimeOffset?)null);
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Null(metrics.LastContributionAt);
+        Assert.Equal(0, metrics.ActiveDocumentCount);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_ReadsActiveCountFromTheRepository()
+    {
+        GivenContributions();
+        _repository.CountActiveDocumentsAsync(Arg.Any<CancellationToken>()).Returns(412);
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal(412, metrics.ActiveDocumentCount);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_CarriesIndexHealthIntoThePayload()
+    {
+        GivenContributions();
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 0)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(0L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(0L);
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        Assert.Equal("doc-1", Assert.Single(metrics.Health.Broken).DocumentId);
+    }
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
+Expected: BUILD FAILURE — no constructor accepting three arguments, and `'DashboardMetricsService' does not contain a definition for 'GetMetricsAsync'`.
+
+- [ ] **Step 3: Extend the service**
+
+In `src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs`:
+
+Add a class-level remark above the type declaration explaining the in-memory fold:
+
+```csharp
+/// <remarks>
+/// Bucketing happens in memory rather than in SQL: date bucketing is provider-specific
+/// (<c>strftime</c> on SQLite, <c>DATEPART</c> on SQL Server) and this application supports
+/// both, so a C# fold keeps the service provider-agnostic.
+/// </remarks>
+```
+
+Add `using System.Globalization;` at the top, add the bucket-count constant beside `ProbeBatchSize`:
+
+```csharp
+    private const int BucketCount = 12;
+```
+
+Add the field beside the other two:
+
+```csharp
+    private readonly TimeProvider _timeProvider;
+```
+
+Replace the constructor with:
+
+```csharp
+    /// <summary>
+    /// Creates a new <see cref="DashboardMetricsService"/>.
+    /// </summary>
+    /// <param name="repository">Document repository.</param>
+    /// <param name="vectorStore">Vector store, for the embedding count and existence probe.</param>
+    /// <param name="timeProvider">Clock. Defaults to <see cref="TimeProvider.System"/>.</param>
+    public DashboardMetricsService(
+        IDocumentRepository repository,
+        IVectorStore vectorStore,
+        TimeProvider? timeProvider = null)
+    {
+        _repository = repository;
+        _vectorStore = vectorStore;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+```
+
+Add `GetMetricsAsync` immediately above `GetIndexHealthAsync`:
+
+```csharp
+    /// <summary>
+    /// Gets everything the dashboard renders.
+    /// </summary>
+    /// <param name="granularity">Bucket size for the growth chart.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The dashboard payload.</returns>
+    public async Task<DashboardMetrics> GetMetricsAsync(
+        GrowthGranularity granularity,
+        CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var firstBucketStart = GetFirstBucketStart(now, granularity);
+
+        var contributions = await _repository.GetContributionsSinceAsync(firstBucketStart, cancellationToken);
+        var growth = BuildBuckets(contributions, firstBucketStart, now, granularity);
+
+        // Rolling windows, not calendar buckets: comparing an in-progress month against a
+        // complete one would report a fictitious drop on the third of every month.
+        var windowDays = granularity == GrowthGranularity.Weekly ? 7 : 30;
+        var currentWindowStart = now.AddDays(-windowDays);
+        var previousWindowStart = now.AddDays(-windowDays * 2);
+
+        var newInPeriod = contributions.Count(c =>
+            c.IsNewDocument && c.CreatedAt >= currentWindowStart);
+
+        var newInPreviousPeriod = contributions.Count(c =>
+            c.IsNewDocument && c.CreatedAt >= previousWindowStart && c.CreatedAt < currentWindowStart);
+
+        var activeCount = await _repository.CountActiveDocumentsAsync(cancellationToken);
+        var lastContribution = await _repository.GetLastContributionAtAsync(cancellationToken);
+        var health = await GetIndexHealthAsync(forceFullReconciliation: false, cancellationToken);
+
+        return new DashboardMetrics(
+            activeCount,
+            newInPeriod,
+            newInPreviousPeriod,
+            lastContribution,
+            health,
+            growth);
+    }
+```
+
+Add these private helpers after `FindDocumentsMissingEmbeddingsAsync`:
+
+```csharp
+    private static DateTimeOffset GetFirstBucketStart(
+        DateTimeOffset now,
+        GrowthGranularity granularity)
+    {
+        if (granularity == GrowthGranularity.Monthly)
+        {
+            var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, now.Offset);
+            return startOfMonth.AddMonths(-(BucketCount - 1));
+        }
+
+        return StartOfWeek(now).AddDays(-7 * (BucketCount - 1));
+    }
+
+    private static DateTimeOffset StartOfWeek(DateTimeOffset value)
+    {
+        var daysSinceMonday = ((int)value.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
+        return new DateTimeOffset(value.Date.AddDays(-daysSinceMonday), value.Offset);
+    }
+
+    private static IReadOnlyList<GrowthBucket> BuildBuckets(
+        IReadOnlyList<DocumentContribution> contributions,
+        DateTimeOffset firstBucketStart,
+        DateTimeOffset now,
+        GrowthGranularity granularity)
+    {
+        var buckets = new List<GrowthBucket>(BucketCount);
+
+        for (var i = 0; i < BucketCount; i++)
+        {
+            var start = granularity == GrowthGranularity.Monthly
+                ? firstBucketStart.AddMonths(i)
+                : firstBucketStart.AddDays(7 * i);
+
+            var end = granularity == GrowthGranularity.Monthly
+                ? start.AddMonths(1)
+                : start.AddDays(7);
+
+            var inBucket = contributions
+                .Where(c => c.CreatedAt >= start && c.CreatedAt < end)
+                .ToList();
+
+            // Empty buckets are kept, never collapsed: a five-month stall must stay visible.
+            buckets.Add(new GrowthBucket(
+                start,
+                FormatLabel(start, granularity),
+                inBucket.Count(c => c.IsNewDocument),
+                inBucket.Count(c => !c.IsNewDocument),
+                now < end));
+        }
+
+        return buckets;
+    }
+
+    private static string FormatLabel(DateTimeOffset start, GrowthGranularity granularity)
+    {
+        return granularity == GrowthGranularity.Monthly
+            ? start.ToString("MMM", CultureInfo.CurrentCulture)
+            : start.ToString("dd/MM", CultureInfo.CurrentCulture);
+    }
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
+Expected: PASS, 18 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/Mjm.LocalDocs.Core/Services/DashboardMetricsService.cs tests/Mjm.LocalDocs.Tests/Services/DashboardMetricsServiceTests.cs
+git commit -m "Add growth buckets and rolling KPIs to dashboard metrics service"
+```
 ## Task 6: Stop silent half-indexing on document add
 
 **Files:**
@@ -2501,7 +2595,7 @@ git commit -m "Add know-how growth chart component"
 - Create: `src/Mjm.LocalDocs.Server/Components/Dashboard/IndexHealthPanel.razor`
 
 **Interfaces:**
-- Consumes: `IndexHealth`, `DocumentChunkTally` (Task 2); `DashboardMetricsService.GetIndexHealthAsync` (Task 5); `DocumentService.ReindexDocumentAsync` (Task 7).
+- Consumes: `IndexHealth`, `DocumentChunkTally` (Task 2); `DashboardMetricsService.GetIndexHealthAsync` (Task 4); `DocumentService.ReindexDocumentAsync` (Task 7).
 - Produces: `IndexHealthPanel` with parameters `Health` (`IndexHealth`, required) and `HealthChanged` (`EventCallback<IndexHealth>`). Task 11 consumes it.
 
 - [ ] **Step 1: Create the component**
@@ -2686,7 +2780,7 @@ git commit -m "Add index health panel component"
 - Modify: `src/Mjm.LocalDocs.Server/Components/Pages/Home.razor`
 
 **Interfaces:**
-- Consumes: `StatCard` (Task 8), `KnowHowGrowthChart` (Task 9), `IndexHealthPanel` (Task 10), `DashboardMetricsService.GetMetricsAsync` (Task 4), `IDocumentRepository.GetActiveDocumentCountsByProjectAsync` (Task 2).
+- Consumes: `StatCard` (Task 8), `KnowHowGrowthChart` (Task 9), `IndexHealthPanel` (Task 10), `DashboardMetricsService.GetMetricsAsync` (Task 5), `IDocumentRepository.GetActiveDocumentCountsByProjectAsync` (Task 2).
 - Produces: the finished dashboard. Nothing consumes it.
 
 - [ ] **Step 1: Replace the whole file**
@@ -2975,7 +3069,7 @@ git commit -m "Rework dashboard around know-how growth and index health"
 
 ## Self-Review
 
-**Spec coverage.** Every spec section maps to a task: metric semantics → Tasks 4 and 5; read models and abstraction additions → Tasks 1, 2, 3; the fast path → Task 5; the pipeline fix, prevention and repair → Tasks 6 and 7; interrupted updates → Task 7; the three components and the `Home.razor` composition → Tasks 8 through 11; the N+1 fix → Task 2 (`GetActiveDocumentCountsByProjectAsync`) consumed in Task 11. The `MudChart` palette and empty-state limitations the spec declared are honoured in Tasks 9 and 10.
+**Spec coverage.** Every spec section maps to a task: metric semantics → Tasks 4 and 5; read models and abstraction additions → Tasks 1, 2, 3; the fast path → Task 4; the pipeline fix, prevention and repair → Tasks 6 and 7; interrupted updates → Task 7; the three components and the `Home.razor` composition → Tasks 8 through 11; the N+1 fix → Task 2 (`GetActiveDocumentCountsByProjectAsync`) consumed in Task 11. The `MudChart` palette and empty-state limitations the spec declared are honoured in Tasks 9 and 10.
 
 **Two spec statements this plan deliberately narrows:**
 
@@ -2984,6 +3078,10 @@ git commit -m "Rework dashboard around know-how growth and index health"
 
 **Placeholder scan.** No TBD or TODO. Every code step carries the actual code. The two "if the API differs, adjust in place" notes in Tasks 9 and 10 are verification instructions with a defined fallback, not deferred decisions.
 
-**Type consistency.** `DocumentChunkTally` carries `DocumentId, ProjectId, FileName, ChunkCount` in the model (Task 2), the repository implementations (Task 3), the service (Task 5) and the panel (Task 10). `IndexHealth(ActiveDocuments, FullyIndexed, Broken)` is constructed only in Task 5 and read in Tasks 10 and 11. `GetIndexHealthAsync(bool, CancellationToken)` has the same signature in Task 4's stub and Task 5's replacement. `GrowthGranularity` is `Weekly` / `Monthly` throughout.
+**Type consistency.** `DocumentChunkTally` carries `DocumentId, ProjectId, FileName, ChunkCount` in the model (Task 2), the repository implementations (Task 3), the service (Task 4) and the panel (Task 10). `IndexHealth(ActiveDocuments, FullyIndexed, Broken)` is constructed only in Task 4 and read in Tasks 5, 10 and 11. `GetIndexHealthAsync(bool, CancellationToken)` is declared once, in Task 4, and never restated. `GrowthGranularity` is `Weekly` / `Monthly` throughout.
 
-**One correction made during review.** Task 4's `GetMetricsAsync` calls `GetIndexHealthAsync`, which is only implemented in Task 5 — so Task 4 defines a stub and Task 5 replaces it. Without that, Task 4 would not compile in isolation and its "run the test and watch it fail for the right reason" step would have been meaningless. Task 5's step 2 states the exact failure the stub produces, so the TDD cycle stays honest.
+**Two corrections made before execution**, both from the pre-flight scan for plan text that mandates what a reviewer would flag as a defect:
+
+1. **Task ordering.** An earlier draft put growth bucketing before index health, which forced `GetMetricsAsync` to call a `GetIndexHealthAsync` that did not exist yet — so that draft had Task 4 declare a stub with an ignored `forceFullReconciliation` parameter and a fabricated all-clear return, replaced in Task 5. The two halves have no mutual dependency, so they are now ordered health-first: the service never contains a stub or an unused member at any point, and each task keeps its own review gate. The `TimeProvider` parameter likewise arrives in Task 5, where it is first used, rather than sitting unread in Task 4.
+
+2. **Test duplication.** An earlier draft had Tasks 2 and 3 copy every aggregate test body into two files, on the stated grounds that "a shared base would hide a divergence behind one failing run." That reasoning was wrong: xUnit discovers inherited `[Fact]` methods on each concrete subclass, so an abstract base with two subclasses runs every test once per implementation and a divergence fails only the affected subclass. The tests are now written once in `DocumentRepositoryAggregateTests` with two thin fixtures. Task 1 still writes its assertions per vector store, because the four existing vector store test files in this repository already do, and matching the house pattern wins there.
