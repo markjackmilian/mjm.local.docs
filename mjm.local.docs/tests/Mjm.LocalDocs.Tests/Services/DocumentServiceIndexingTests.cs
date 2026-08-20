@@ -192,6 +192,68 @@ public sealed class DocumentServiceIndexingTests
     }
 
     [Fact]
+    public async Task ReindexDocumentAsync_WhenTextYieldsNoChunks_LeavesTheParentAlone()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        // Extracted text that produces nothing: no throw, but no searchable document either.
+        GivenChunks("doc-2", 0);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // Superseding here would strip the chain's only working index, on exactly the button
+        // the dashboard offers for zero-chunk documents.
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ClosesEveryStillActiveAncestorNotJustTheParent()
+    {
+        // v1 <- v2 <- v3 with two interrupted updates: all three still active, and closing only
+        // v2 would leave v1 and v3 both active and indexed, answering the same query.
+        var version3 = CreateDocument("doc-3", parentDocumentId: "doc-2");
+
+        _repository.GetDocumentAsync("doc-3", Arg.Any<CancellationToken>()).Returns(version3);
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-2", parentDocumentId: "doc-1"));
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-3", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-3");
+
+        await _repository.Received(1).SupersedeDocumentAsync("doc-2", Arg.Any<CancellationToken>());
+        await _repository.Received(1).SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_StripsTheParentIndexBeforeSupersedingIt()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // Superseding first would leave a superseded document still answering searches if the
+        // deletes never ran — invisible to the dashboard and unrepairable.
+        Received.InOrder(() =>
+        {
+            _vectorStore.DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
     public async Task ReindexDocumentAsync_WipesBeforeRebuildingSoRetriesAreIdempotent()
     {
         var document = CreateDocument();
@@ -229,6 +291,11 @@ public sealed class DocumentServiceIndexingTests
 
         await _repository.DidNotReceive().AddChunksAsync(
             Arg.Any<IEnumerable<DocumentChunk>>(), Arg.Any<CancellationToken>());
+
+        // The refusal must precede every destructive call, or a mistaken reindex of a
+        // superseded version would delete an index it was never allowed to touch.
+        await _repository.DidNotReceive().DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]
