@@ -1647,6 +1647,42 @@ Then append these tests to the same class:
 
         Assert.Equal("doc-1", Assert.Single(metrics.Health.Broken).DocumentId);
     }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_SplitsABucketBoundaryInstantIntoTheLaterBucket()
+    {
+        var augustStart = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
+
+        GivenContributions(
+            // Exactly the August bucket's start instant.
+            new DocumentContribution(augustStart, true),
+            // One tick earlier, so still inside July.
+            new DocumentContribution(augustStart.AddTicks(-1), true));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        // Buckets are half-open [start, end), so the boundary instant belongs to August alone:
+        // one contribution each, never both in one bucket and never dropped from both.
+        Assert.Equal(1, metrics.Growth[10].NewDocuments);
+        Assert.Equal(1, metrics.Growth[11].NewDocuments);
+    }
+
+    [Fact]
+    public async Task GetMetricsAsync_Monthly_CountsAWindowBoundaryInstantAsCurrent()
+    {
+        // The clock is 2026-08-20T10:00:00Z, so the rolling 30-day window starts exactly here.
+        var windowStart = new DateTimeOffset(2026, 7, 21, 10, 0, 0, TimeSpan.Zero);
+
+        GivenContributions(
+            new DocumentContribution(windowStart, true),
+            new DocumentContribution(windowStart.AddTicks(-1), true));
+
+        var metrics = await CreateSut().GetMetricsAsync(GrowthGranularity.Monthly);
+
+        // The window is half-open too: the boundary instant is current, one tick earlier is previous.
+        Assert.Equal(1, metrics.NewInPeriod);
+        Assert.Equal(1, metrics.NewInPreviousPeriod);
+    }
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1812,7 +1848,7 @@ Add these private helpers after `FindDocumentsMissingEmbeddingsAsync`:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DashboardMetricsServiceTests"`
-Expected: PASS, 18 tests.
+Expected: PASS, 20 tests.
 
 - [ ] **Step 5: Commit**
 
