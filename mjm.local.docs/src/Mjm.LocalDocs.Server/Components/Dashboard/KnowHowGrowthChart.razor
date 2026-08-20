@@ -1,0 +1,90 @@
+@using Mjm.LocalDocs.Core.Models.Dashboard
+
+@* Stacked bars: solid = brand-new documents, faded = new versions of existing ones.
+   The split is the point — steady bars with a shrinking solid portion mean the
+   knowledge base is being rewritten, not expanded. *@
+
+<MudPaper Class="pa-5" Elevation="0" Style="border-radius: var(--ld-radius-lg); height: 100%;">
+    <div class="d-flex align-center justify-space-between mb-4" style="gap: 12px;">
+        <div>
+            <p class="ld-section-title" style="margin-bottom: 2px;">KNOW-HOW GROWTH</p>
+            <MudText Style="font-size: 0.75rem; color: var(--ld-text-muted);">
+                New documents vs new versions
+            </MudText>
+        </div>
+        <MudToggleGroup T="GrowthGranularity"
+                        Value="@Granularity"
+                        ValueChanged="@OnGranularityChanged"
+                        Size="Size.Small"
+                        CheckMark="false">
+            <MudToggleItem Value="@GrowthGranularity.Monthly" Text="Months" />
+            <MudToggleItem Value="@GrowthGranularity.Weekly" Text="Weeks" />
+        </MudToggleGroup>
+    </div>
+
+    @if (HasAnyContribution)
+    {
+        <MudChart ChartType="ChartType.StackedBar"
+                  ChartSeries="@Series"
+                  XAxisLabels="@Labels"
+                  ChartOptions="@_chartOptions"
+                  Width="100%"
+                  Height="300px" />
+
+        @if (Buckets.Count > 0 && Buckets[^1].IsPartial)
+        {
+            <MudText Style="font-size: 0.6875rem; color: var(--ld-text-muted); margin-top: 4px;">
+                The last bar covers a period still in progress.
+            </MudText>
+        }
+    }
+    else
+    {
+        <div class="ld-empty-state">
+            <MudIcon Icon="@Icons.Material.Rounded.ShowChart"
+                     Style="font-size: 2.5rem; color: var(--ld-text-disabled); margin-bottom: 8px;" />
+            <MudText Style="font-size: 0.875rem; font-weight: 600; color: var(--ld-text-primary);">
+                No contributions in this window
+            </MudText>
+            <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary);">
+                Add documents to a project and the growth will show up here.
+            </MudText>
+        </div>
+    }
+</MudPaper>
+
+@code {
+    /// <summary>Twelve buckets, oldest first.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<GrowthBucket> Buckets { get; set; } = [];
+
+    /// <summary>Currently selected bucket size.</summary>
+    [Parameter] public GrowthGranularity Granularity { get; set; } = GrowthGranularity.Monthly;
+
+    /// <summary>Raised when the user switches bucket size.</summary>
+    [Parameter] public EventCallback<GrowthGranularity> GranularityChanged { get; set; }
+
+    // MudChart takes its colours from C#, not from the --ld-* CSS variables, so these two
+    // are fixed values chosen to read correctly against both the light and dark surfaces.
+    private readonly ChartOptions _chartOptions = new()
+    {
+        ChartPalette = ["#2563EB", "#93C5FD"],
+        InterpolationOption = InterpolationOption.Straight
+    };
+
+    private bool HasAnyContribution =>
+        Buckets.Any(b => b.NewDocuments > 0 || b.NewVersions > 0);
+
+    private List<ChartSeries> Series =>
+    [
+        new() { Name = "New documents", Data = Buckets.Select(b => (double)b.NewDocuments).ToArray() },
+        new() { Name = "New versions", Data = Buckets.Select(b => (double)b.NewVersions).ToArray() }
+    ];
+
+    private string[] Labels => Buckets.Select(b => b.Label).ToArray();
+
+    private Task OnGranularityChanged(GrowthGranularity granularity)
+    {
+        Granularity = granularity;
+        return GranularityChanged.InvokeAsync(granularity);
+    }
+}
