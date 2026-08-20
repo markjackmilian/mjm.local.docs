@@ -334,5 +334,48 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
     }
 
+    /// <inheritdoc />
+    public Task<long> CountChunksAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult((long)_chunks.Count);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DocumentChunkTally>> GetActiveDocumentChunkTalliesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var chunkCounts = _chunks.Values
+            .GroupBy(c => c.DocumentId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        var tallies = _documents.Values
+            .Where(d => !d.IsSuperseded)
+            .Select(d => new DocumentChunkTally(
+                d.Id,
+                d.ProjectId,
+                d.FileName,
+                chunkCounts.TryGetValue(d.Id, out var count) ? count : 0))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<DocumentChunkTally>>(tallies);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<ChunkOwnership>> GetChunkOwnershipAsync(
+        IEnumerable<string> documentIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = documentIds.ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0)
+            return Task.FromResult<IReadOnlyList<ChunkOwnership>>([]);
+
+        var ownership = _chunks.Values
+            .Where(c => ids.Contains(c.DocumentId))
+            .Select(c => new ChunkOwnership(c.DocumentId, c.Id))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ChunkOwnership>>(ownership);
+    }
+
     #endregion
 }

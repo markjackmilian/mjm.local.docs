@@ -380,6 +380,42 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
         return rows.ToDictionary(r => r.ProjectId, r => r.Count);
     }
 
+    /// <inheritdoc />
+    public Task<long> CountChunksAsync(CancellationToken cancellationToken = default)
+    {
+        return _context.DocumentChunks
+            .AsNoTracking()
+            .LongCountAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DocumentChunkTally>> GetActiveDocumentChunkTalliesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // d.Chunks.Count becomes a correlated COUNT subquery: no chunk rows are materialised.
+        return await _context.Documents
+            .AsNoTracking()
+            .Where(d => !d.IsSuperseded)
+            .Select(d => new DocumentChunkTally(d.Id, d.ProjectId, d.FileName, d.Chunks.Count))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ChunkOwnership>> GetChunkOwnershipAsync(
+        IEnumerable<string> documentIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = documentIds.ToList();
+        if (ids.Count == 0)
+            return [];
+
+        return await _context.DocumentChunks
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.DocumentId))
+            .Select(c => new ChunkOwnership(c.DocumentId, c.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers

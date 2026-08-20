@@ -222,5 +222,35 @@ public interface IDocumentRepository
     Task<IReadOnlyDictionary<string, int>> GetActiveDocumentCountsByProjectAsync(
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Counts all persisted chunks. In a healthy system this equals
+    /// <see cref="IVectorStore.CountAsync"/>, because chunks exist only for active documents.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The total number of chunks.</returns>
+    Task<long> CountChunksAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the chunk count of every active document, including documents with zero chunks.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One tally per active document.</returns>
+    Task<IReadOnlyList<DocumentChunkTally>> GetActiveDocumentChunkTalliesAsync(
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the chunks belonging to the given documents, each paired with its owner.
+    /// </summary>
+    /// <remarks>
+    /// The owner is carried explicitly rather than parsed back out of the
+    /// <c>{documentId}_chunk_{index}</c> identifier convention.
+    /// </remarks>
+    /// <param name="documentIds">The documents whose chunks are wanted.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Chunk-to-document pairs, in no guaranteed order.</returns>
+    Task<IReadOnlyList<ChunkOwnership>> GetChunkOwnershipAsync(
+        IEnumerable<string> documentIds,
+        CancellationToken cancellationToken = default);
+
     #endregion
 }

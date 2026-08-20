@@ -141,4 +141,64 @@ public abstract class DocumentRepositoryAggregateTests
         Assert.Equal(2, counts["proj-a"]);
         Assert.Equal(1, counts["proj-b"]);
     }
+
+    [Fact]
+    public async Task CountChunksAsync_ReturnsTotalAcrossDocuments()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 3);
+        await SeedDocumentAsync("doc-2", chunkCount: 2);
+
+        var count = await Sut.CountChunksAsync();
+
+        Assert.Equal(5L, count);
+    }
+
+    [Fact]
+    public async Task GetActiveDocumentChunkTalliesAsync_ExcludesSupersededAndReportsCounts()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 3);
+        await SeedDocumentAsync("doc-2", chunkCount: 0);
+        await SeedDocumentAsync("doc-3", isSuperseded: true, chunkCount: 4);
+
+        var tallies = await Sut.GetActiveDocumentChunkTalliesAsync();
+
+        Assert.Equal(2, tallies.Count);
+        Assert.Equal(3, tallies.Single(t => t.DocumentId == "doc-1").ChunkCount);
+        Assert.Equal(0, tallies.Single(t => t.DocumentId == "doc-2").ChunkCount);
+    }
+
+    [Fact]
+    public async Task GetActiveDocumentChunkTalliesAsync_CarriesProjectAndFileName()
+    {
+        await SeedDocumentAsync("doc-1", projectId: "proj-x", chunkCount: 1);
+
+        var tallies = await Sut.GetActiveDocumentChunkTalliesAsync();
+
+        var tally = Assert.Single(tallies);
+        Assert.Equal("proj-x", tally.ProjectId);
+        Assert.Equal("doc-1.txt", tally.FileName);
+    }
+
+    [Fact]
+    public async Task GetChunkOwnershipAsync_ReturnsChunksPairedWithTheirDocument()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 2);
+        await SeedDocumentAsync("doc-2", chunkCount: 1);
+
+        var ownership = await Sut.GetChunkOwnershipAsync(["doc-1"]);
+
+        Assert.Equal(2, ownership.Count);
+        Assert.All(ownership, o => Assert.Equal("doc-1", o.DocumentId));
+        Assert.Contains(ownership, o => o.ChunkId == "doc-1_chunk_0");
+    }
+
+    [Fact]
+    public async Task GetChunkOwnershipAsync_WithEmptyInput_ReturnsEmpty()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 2);
+
+        var ownership = await Sut.GetChunkOwnershipAsync([]);
+
+        Assert.Empty(ownership);
+    }
 }
