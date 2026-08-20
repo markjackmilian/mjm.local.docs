@@ -2836,8 +2836,7 @@ Create `src/Mjm.LocalDocs.Server/Components/Dashboard/KnowHowGrowthChart.razor`:
                         Value="@Granularity"
                         ValueChanged="@OnGranularityChanged"
                         Size="Size.Small"
-                        CheckMark="false"
-                        Dense="true">
+                        CheckMark="false">
             <MudToggleItem Value="@GrowthGranularity.Monthly" Text="Months" />
             <MudToggleItem Value="@GrowthGranularity.Weekly" Text="Weeks" />
         </MudToggleGroup>
