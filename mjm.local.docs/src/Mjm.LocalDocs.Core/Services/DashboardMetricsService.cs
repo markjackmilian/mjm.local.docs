@@ -203,7 +203,7 @@ public sealed class DashboardMetricsService
     private static string FormatLabel(DateTimeOffset start, GrowthGranularity granularity)
     {
         return granularity == GrowthGranularity.Monthly
-            ? start.ToString("MMM", CultureInfo.CurrentCulture)
-            : start.ToString("dd/MM", CultureInfo.CurrentCulture);
+            ? start.ToString("MMM", CultureInfo.InvariantCulture)
+            : start.ToString("dd/MM", CultureInfo.InvariantCulture);
     }
 }
