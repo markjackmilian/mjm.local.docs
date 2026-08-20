@@ -266,8 +266,18 @@ public sealed class DocumentService
         {
             var parent = await _repository.GetDocumentAsync(parentId, CancellationToken.None);
 
-            if (parent is null || parent.IsSuperseded)
+            if (parent is null)
                 return;
+
+            // Skip past an ancestor already retired rather than stopping at it. A walk
+            // interrupted between two ancestors would otherwise be unresumable: the retry
+            // would halt at the one it had already closed and never reach the stale, still
+            // indexed one above it — invisible to the dashboard and beyond any repair call.
+            if (parent.IsSuperseded)
+            {
+                parentId = parent.ParentDocumentId;
+                continue;
+            }
 
             // Strip the index before superseding. Interrupted this way, the parent stays active
             // and so remains closable on the next reindex; superseding first would leave a
