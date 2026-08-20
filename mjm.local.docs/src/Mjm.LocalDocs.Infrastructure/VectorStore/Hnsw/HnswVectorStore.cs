@@ -204,8 +204,7 @@ public sealed class HnswVectorStore : IVectorStore, IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var all = _graph.GetAllIds().ToHashSet(StringComparer.Ordinal);
-        var existing = chunkIds.Where(all.Contains).ToList();
+        var existing = chunkIds.Where(_graph.Contains).ToList();
         return Task.FromResult<IReadOnlyList<string>>(existing);
     }
 
