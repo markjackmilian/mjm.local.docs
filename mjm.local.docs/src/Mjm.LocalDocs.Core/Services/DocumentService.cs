@@ -171,6 +171,88 @@ public sealed class DocumentService
     }
 
     /// <summary>
+    /// Rebuilds the chunks and embeddings of a document from its already-extracted text.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Wipes the existing index first, so retrying after a partial failure is idempotent.
+    /// The original file is never re-read: <see cref="Document.ExtractedText"/> is persisted,
+    /// including on superseded versions.
+    /// </para>
+    /// <para>
+    /// When the document is a version whose parent is still active — an update interrupted by
+    /// an indexing failure — a successful reindex also supersedes that parent, closing the
+    /// half-finished update.
+    /// </para>
+    /// </remarks>
+    /// <param name="documentId">The document to reindex.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the document is not found, or is superseded and therefore not meant to be indexed.
+    /// </exception>
+    /// <exception cref="DocumentIndexingException">Thrown when indexing fails again.</exception>
+    public async Task ReindexDocumentAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        var document = await _repository.GetDocumentAsync(documentId, cancellationToken);
+
+        if (document is null)
+            throw new InvalidOperationException($"Document '{documentId}' not found.");
+
+        if (document.IsSuperseded)
+        {
+            throw new InvalidOperationException(
+                $"Document '{documentId}' is superseded; superseded versions are not indexed by design.");
+        }
+
+        // Clean slate so a retry after a partial failure cannot duplicate chunks.
+        await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+        await _repository.DeleteChunksByDocumentAsync(documentId, cancellationToken);
+
+        try
+        {
+            await IndexDocumentAsync(document, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await DiscardPartialIndexAsync(documentId);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The filter above matters here for the same reason it does on the insert path:
+            // an HttpClient timeout throws TaskCanceledException with the caller's token
+            // uncancelled, and a timeout is a provider failure, not a cancellation.
+            await DiscardPartialIndexAsync(documentId);
+            throw new DocumentIndexingException(documentId, ex);
+        }
+
+        await CloseInterruptedUpdateAsync(document, cancellationToken);
+    }
+
+    /// <summary>
+    /// Completes an update that failed partway: if this document is a version whose parent is
+    /// still active, supersede the parent and remove it from search.
+    /// </summary>
+    private async Task CloseInterruptedUpdateAsync(
+        Document document,
+        CancellationToken cancellationToken)
+    {
+        if (document.ParentDocumentId is null)
+            return;
+
+        var parent = await _repository.GetDocumentAsync(document.ParentDocumentId, cancellationToken);
+
+        if (parent is null || parent.IsSuperseded)
+            return;
+
+        await _repository.SupersedeDocumentAsync(parent.Id, cancellationToken);
+        await _vectorStore.DeleteByDocumentIdAsync(parent.Id, cancellationToken);
+        await _repository.DeleteChunksByDocumentAsync(parent.Id, cancellationToken);
+    }
+
+    /// <summary>
     /// Gets all versions in a document's version chain.
     /// </summary>
     /// <param name="documentId">Any document ID in the version chain.</param>

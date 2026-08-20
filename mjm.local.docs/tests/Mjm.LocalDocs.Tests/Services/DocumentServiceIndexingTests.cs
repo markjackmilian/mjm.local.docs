@@ -172,4 +172,159 @@ public sealed class DocumentServiceIndexingTests
             Arg.Any<CancellationToken>());
         await _repository.DidNotReceive().DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_RebuildsChunksAndEmbeddings()
+    {
+        var document = CreateDocument();
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(document);
+        GivenChunks("doc-1", 2);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }, new float[] { 0.2f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        await _repository.Received(1).AddChunksAsync(
+            Arg.Any<IEnumerable<DocumentChunk>>(), Arg.Any<CancellationToken>());
+        await _vectorStore.Received(1).UpsertBatchAsync(
+            Arg.Any<IEnumerable<KeyValuePair<string, ReadOnlyMemory<float>>>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WipesBeforeRebuildingSoRetriesAreIdempotent()
+    {
+        var document = CreateDocument();
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(document);
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        await _repository.Received(2).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _repository.Received(2).AddChunksAsync(
+            Arg.Any<IEnumerable<DocumentChunk>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenDocumentMissing_Throws()
+    {
+        _repository.GetDocumentAsync("nope", Arg.Any<CancellationToken>())
+            .Returns((Document?)null);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.ReindexDocumentAsync("nope"));
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_RefusesSupersededDocuments()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument(isSuperseded: true));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.ReindexDocumentAsync("doc-1"));
+
+        await _repository.DidNotReceive().AddChunksAsync(
+            Arg.Any<IEnumerable<DocumentChunk>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenEmbeddingFailsAgain_ThrowsAndLeavesNoChunks()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 2);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("still down"));
+
+        await Assert.ThrowsAsync<DocumentIndexingException>(() => _sut.ReindexDocumentAsync("doc-1"));
+
+        // Once for the pre-wipe, once for the compensating cleanup.
+        await _repository.Received(2).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenProviderTimesOut_WrapsTheTaskCanceledException()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 2);
+        // Same trap as the insert path: a timeout is a provider failure, not a cancellation.
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The request timed out."));
+
+        var ex = await Assert.ThrowsAsync<DocumentIndexingException>(
+            () => _sut.ReindexDocumentAsync("doc-1"));
+
+        Assert.Equal("doc-1", ex.DocumentId);
+        Assert.IsType<TaskCanceledException>(ex.InnerException);
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenCallerCancels_PropagatesCancellationUnwrapped()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 2);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _sut.ReindexDocumentAsync("doc-1", cts.Token));
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ClosesAnInterruptedUpdateBySupersedingTheParent()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+        var parentStillActive = CreateDocument("doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(parentStillActive);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        await _repository.Received(1).SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _repository.Received(1).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenParentAlreadySuperseded_LeavesItAlone()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+        var parentAlreadyDone = CreateDocument("doc-1", isSuperseded: true);
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(parentAlreadyDone);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenIndexingFails_DoesNotSupersedeTheParent()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("still down"));
+
+        await Assert.ThrowsAsync<DocumentIndexingException>(() => _sut.ReindexDocumentAsync("doc-2"));
+
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
 }
