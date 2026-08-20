@@ -3,8 +3,12 @@
 @rendermode InteractiveServer
 @using Mjm.LocalDocs.Core.Abstractions
 @using Mjm.LocalDocs.Core.Models
+@using Mjm.LocalDocs.Core.Models.Dashboard
+@using Mjm.LocalDocs.Core.Services
+@using Mjm.LocalDocs.Server.Components.Dashboard
 @inject IProjectRepository ProjectRepository
 @inject IDocumentRepository DocumentRepository
+@inject DashboardMetricsService Metrics
 @inject NavigationManager Navigation
 
 <PageTitle>Dashboard - Local Docs</PageTitle>
@@ -13,103 +17,98 @@
 {
     <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mx-auto d-block my-8" />
 }
+else if (_metrics is null)
+{
+    <MudAlert Severity="Severity.Error" Class="my-4">
+        Could not load the dashboard. @_loadError
+    </MudAlert>
+}
 else
 {
-    <div class="mb-6">
-        <MudText Typo="Typo.h4" Class="ld-heading">Dashboard</MudText>
-        <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
-            Overview of your document workspace
-        </MudText>
-    </div>
-    
-    @* Statistics Cards *@
-    <MudGrid Spacing="4" Class="mb-6">
-        <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-5 ld-stat-green" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
-                <div class="d-flex align-center" style="gap: 16px;">
-                    <div class="ld-stat-icon ld-stat-icon-green">
-                        <MudIcon Icon="@Icons.Material.Rounded.FolderCopy" Style="font-size: 1.25rem;" />
-                    </div>
-                    <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
-                            @_projectCount
-                        </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Projects</MudText>
-                    </div>
-                </div>
-            </MudPaper>
-        </MudItem>
-        
-        <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-5 ld-stat-blue" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
-                <div class="d-flex align-center" style="gap: 16px;">
-                    <div class="ld-stat-icon ld-stat-icon-blue">
-                        <MudIcon Icon="@Icons.Material.Rounded.Description" Style="font-size: 1.25rem;" />
-                    </div>
-                    <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
-                            @_documentCount
-                        </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Documents</MudText>
-                    </div>
-                </div>
-            </MudPaper>
-        </MudItem>
-        
-        <MudItem xs="12" sm="6" md="4">
-            <MudPaper Class="pa-5 ld-stat-amber" Elevation="0" Style="border-radius: var(--ld-radius-lg);">
-                <div class="d-flex align-center" style="gap: 16px;">
-                    <div class="ld-stat-icon ld-stat-icon-amber">
-                        <MudIcon Icon="@Icons.Material.Rounded.CloudQueue" Style="font-size: 1.25rem;" />
-                    </div>
-                    <div>
-                        <MudText Style="font-size: 1.75rem; font-weight: 700; letter-spacing: -0.025em; color: var(--ld-text-primary); line-height: 1;">
-                            @FormatFileSize(_totalSize)
-                        </MudText>
-                        <MudText Style="font-size: 0.8125rem; color: var(--ld-text-secondary); margin-top: 2px;">Total Size</MudText>
-                    </div>
-                </div>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
-
-    @* Quick Actions *@
-    <div class="mb-6">
-        <p class="ld-section-title">QUICK ACTIONS</p>
+    <div class="d-flex align-center justify-space-between flex-wrap mb-6" style="gap: 12px;">
+        <div>
+            <MudText Typo="Typo.h4" Class="ld-heading">Dashboard</MudText>
+            <MudText Typo="Typo.body2" Style="color: var(--ld-text-secondary); margin-top: 4px;">
+                Is the knowledge base growing?
+            </MudText>
+        </div>
         <div class="d-flex flex-wrap" style="gap: 12px;">
-            <MudButton Variant="Variant.Filled" 
-                       Color="Color.Primary" 
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
                        StartIcon="@Icons.Material.Rounded.Add"
-                       Size="Size.Medium"
                        Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                        OnClick="@(() => Navigation.NavigateTo("/projects/new"))">
                 New Project
             </MudButton>
-            
-            <MudButton Variant="Variant.Outlined" 
-                       Color="Color.Primary" 
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Primary"
                        StartIcon="@Icons.Material.Rounded.ViewList"
-                       Size="Size.Medium"
                        Style="border-radius: var(--ld-radius-pill); padding: 8px 24px;"
                        OnClick="@(() => Navigation.NavigateTo("/projects"))">
                 All Projects
             </MudButton>
         </div>
     </div>
-    
-    @* Recent Projects *@
+
+    @* Five KPI tiles. "Last contribution" is the bluntest number here: a large
+       knowledge base whose last write was months ago is an archive, not a tool. *@
+    <MudGrid Spacing="3" Class="mb-6">
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <StatCard Icon="@Icons.Material.Rounded.Description"
+                      Value="@_metrics.ActiveDocumentCount.ToString()"
+                      Label="Active documents"
+                      Accent="blue" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" lg="2">
+            <StatCard Icon="@Icons.Material.Rounded.NoteAdd"
+                      Value="@_metrics.NewInPeriod.ToString()"
+                      Label="@($"New ({PeriodLabel})")"
+                      Accent="green" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4" lg="3">
+            <StatCard Icon="@Icons.Material.Rounded.CompareArrows"
+                      Value="@FormatDelta(Delta)"
+                      Label="@($"vs previous {PeriodLabel}")"
+                      Accent="violet"
+                      Delta="Delta" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="6" lg="3">
+            <StatCard Icon="@Icons.Material.Rounded.Schedule"
+                      Value="@LastContributionText"
+                      Label="Last contribution"
+                      Accent="amber" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="6" lg="2">
+            <StatCard Icon="@Icons.Material.Rounded.ErrorOutline"
+                      Value="@_health.Broken.Count.ToString()"
+                      Label="Not indexed"
+                      Accent="@(_health.Broken.Count == 0 ? "green" : "rose")" />
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Spacing="3" Class="mb-6">
+        <MudItem xs="12" md="8">
+            <KnowHowGrowthChart Buckets="@_metrics.Growth"
+                                Granularity="@_granularity"
+                                GranularityChanged="@OnGranularityChangedAsync" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <IndexHealthPanel Health="@_health" HealthChanged="@OnHealthChanged" />
+        </MudItem>
+    </MudGrid>
+
     @if (_recentProjects.Count > 0)
     {
         <div class="mb-2">
             <p class="ld-section-title">RECENT PROJECTS</p>
         </div>
-        
+
         <MudGrid Spacing="3">
             @foreach (var project in _recentProjects)
             {
                 <MudItem xs="12" sm="6" md="4">
-                    <MudPaper Class="pa-5 ld-card-hover cursor-pointer" 
-                              Elevation="0" 
+                    <MudPaper Class="pa-5 ld-card-hover cursor-pointer"
+                              Elevation="0"
                               Style="border-radius: var(--ld-radius-lg);"
                               @onclick="@(() => Navigation.NavigateTo($"/projects/{project.Id}"))">
                         <div class="d-flex align-center mb-3" style="gap: 10px;">
@@ -137,10 +136,10 @@ else
             }
         </MudGrid>
     }
-    else if (_projectCount == 0)
+    else
     {
         <div class="ld-empty-state">
-            <MudIcon Icon="@Icons.Material.Rounded.CreateNewFolder" 
+            <MudIcon Icon="@Icons.Material.Rounded.CreateNewFolder"
                      Style="font-size: 3rem; color: var(--ld-text-disabled); margin-bottom: 12px;" />
             <MudText Style="font-size: 0.9375rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 4px;">
                 No projects yet
@@ -160,11 +159,12 @@ else
 
 @code {
     private bool _loading = true;
-    private int _projectCount;
-    private int _documentCount;
-    private long _totalSize;
+    private string? _loadError;
+    private GrowthGranularity _granularity = GrowthGranularity.Monthly;
+    private DashboardMetrics? _metrics;
+    private IndexHealth _health = new(0, 0, []);
     private List<Project> _recentProjects = [];
-    private Dictionary<string, int> _projectDocumentCounts = [];
+    private IReadOnlyDictionary<string, int> _projectDocumentCounts = new Dictionary<string, int>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -174,47 +174,71 @@ else
     private async Task LoadDataAsync()
     {
         _loading = true;
-        
-        var projects = await ProjectRepository.GetAllAsync();
-        _projectCount = projects.Count;
-        _recentProjects = projects
-            .OrderByDescending(p => p.UpdatedAt ?? p.CreatedAt)
-            .Take(6)
-            .ToList();
+        _loadError = null;
 
-        _documentCount = 0;
-        _totalSize = 0;
-        _projectDocumentCounts.Clear();
-
-        foreach (var project in projects)
+        try
         {
-            var docs = await DocumentRepository.GetDocumentsByProjectAsync(project.Id);
-            var activeDocs = docs.Where(d => !d.IsSuperseded).ToList();
-            _projectDocumentCounts[project.Id] = activeDocs.Count;
-            _documentCount += activeDocs.Count;
-            _totalSize += activeDocs.Sum(d => d.FileSizeBytes);
+            _metrics = await Metrics.GetMetricsAsync(_granularity);
+            _health = _metrics.Health;
+
+            var projects = await ProjectRepository.GetAllAsync();
+            _recentProjects = projects
+                .OrderByDescending(p => p.UpdatedAt ?? p.CreatedAt)
+                .Take(6)
+                .ToList();
+
+            // One GROUP BY. The previous implementation looped GetDocumentsByProjectAsync
+            // per project, which materialises whole entities including FileContent — so with
+            // database file storage it pulled every stored blob into memory to count rows.
+            _projectDocumentCounts = await DocumentRepository.GetActiveDocumentCountsByProjectAsync();
         }
-
-        _loading = false;
-    }
-
-    private int GetDocumentCountForProject(string projectId)
-    {
-        return _projectDocumentCounts.TryGetValue(projectId, out var count) ? count : 0;
-    }
-
-    private static string FormatFileSize(long bytes)
-    {
-        string[] sizes = ["B", "KB", "MB", "GB"];
-        int order = 0;
-        double size = bytes;
-        
-        while (size >= 1024 && order < sizes.Length - 1)
+        catch (Exception ex)
         {
-            order++;
-            size /= 1024;
+            _metrics = null;
+            _loadError = ex.Message;
         }
-        
-        return $"{size:0.##} {sizes[order]}";
+        finally
+        {
+            _loading = false;
+        }
     }
+
+    private async Task OnGranularityChangedAsync(GrowthGranularity granularity)
+    {
+        _granularity = granularity;
+        await LoadDataAsync();
+    }
+
+    private void OnHealthChanged(IndexHealth health)
+    {
+        _health = health;
+    }
+
+    private int Delta => _metrics is null
+        ? 0
+        : _metrics.NewInPeriod - _metrics.NewInPreviousPeriod;
+
+    private string PeriodLabel => _granularity == GrowthGranularity.Weekly ? "7d" : "30d";
+
+    private string LastContributionText
+    {
+        get
+        {
+            if (_metrics?.LastContributionAt is null)
+                return "—";
+
+            var days = (int)(DateTimeOffset.UtcNow - _metrics.LastContributionAt.Value).TotalDays;
+            return days switch
+            {
+                <= 0 => "today",
+                1 => "1 day",
+                _ => $"{days} days"
+            };
+        }
+    }
+
+    private static string FormatDelta(int delta) => delta > 0 ? $"+{delta}" : delta.ToString();
+
+    private int GetDocumentCountForProject(string projectId) =>
+        _projectDocumentCounts.TryGetValue(projectId, out var count) ? count : 0;
 }
