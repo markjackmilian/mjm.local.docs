@@ -1968,18 +1968,48 @@ public sealed class DocumentServiceIndexingTests
     }
 
     [Fact]
-    public async Task AddDocumentAsync_WhenCancelled_PropagatesCancellationUnwrapped()
+    public async Task AddDocumentAsync_WhenCallerCancels_PropagatesCancellationUnwrapped()
     {
         var document = CreateDocument();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
         _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>())
             .Returns(document);
         GivenChunks("doc-1", 2);
         _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new OperationCanceledException());
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => _sut.AddDocumentAsync(document));
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _sut.AddDocumentAsync(document, cts.Token));
 
-        await _repository.Received(1).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        // The compensation must not inherit the cancelled token, or it could not run at all.
+        // Matching on Arg.Any here would leave that guarantee unpinned.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync(
+            "doc-1", Arg.Is<CancellationToken>(t => !t.IsCancellationRequested));
+        await _repository.Received(1).DeleteChunksByDocumentAsync(
+            "doc-1", Arg.Is<CancellationToken>(t => !t.IsCancellationRequested));
+    }
+
+    [Fact]
+    public async Task AddDocumentAsync_WhenProviderTimesOut_WrapsTheTaskCanceledException()
+    {
+        var document = CreateDocument();
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>())
+            .Returns(document);
+        GivenChunks("doc-1", 2);
+        // An HttpClient timeout surfaces as TaskCanceledException with the caller's token intact,
+        // so it must be wrapped like any other provider failure, not mistaken for cancellation.
+        // Without the `when` filter on the cancellation clause this is the most likely real
+        // failure and it would escape raw, telling the user "cancelled" for a saved document.
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The request timed out."));
+
+        var ex = await Assert.ThrowsAsync<DocumentIndexingException>(
+            () => _sut.AddDocumentAsync(document));
+
+        Assert.Equal("doc-1", ex.DocumentId);
+        Assert.IsType<TaskCanceledException>(ex.InnerException);
     }
 
     [Fact]
@@ -1998,6 +2028,9 @@ public sealed class DocumentServiceIndexingTests
             () => _sut.AddDocumentAsync(document));
 
         Assert.IsType<HttpRequestException>(ex.InnerException);
+
+        // The chunk delete must still run even though the vector delete threw.
+        await _repository.Received(1).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -2074,7 +2107,7 @@ In `src/Mjm.LocalDocs.Core/Services/DocumentService.cs`, replace steps 3 to 6 of
         {
             await IndexDocumentAsync(document, cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await DiscardPartialIndexAsync(document.Id);
             throw;
@@ -2086,6 +2119,20 @@ In `src/Mjm.LocalDocs.Core/Services/DocumentService.cs`, replace steps 3 to 6 of
         }
 
         return savedDocument;
+```
+
+Also add the exception each method now propagates to its XML docs — this is the one exception
+callers are specifically meant to catch. On `AddDocumentAsync`, beside the existing
+`<exception cref="ArgumentException">`:
+
+```csharp
+    /// <exception cref="DocumentIndexingException">Thrown when the document was saved but could not be indexed.</exception>
+```
+
+And on `UpdateDocumentAsync`, beside its existing `<exception cref="InvalidOperationException">`:
+
+```csharp
+    /// <exception cref="DocumentIndexingException">Thrown when the new version was saved but could not be indexed. The previous version is left active.</exception>
 ```
 
 Then add these two privates at the end of the class, before the closing brace:
@@ -2126,9 +2173,21 @@ Then add these two privates at the end of the class, before the closing brace:
     /// </remarks>
     private async Task DiscardPartialIndexAsync(string documentId)
     {
+        // Guarded independently: in the dominant failure mode nothing was upserted, so the
+        // vector delete is a no-op that must not be able to prevent the chunk delete that
+        // actually matters. Every store deletes by chunk-id prefix, so the order creates
+        // no dependency between the two.
         try
         {
             await _vectorStore.DeleteByDocumentIdAsync(documentId, CancellationToken.None);
+        }
+        catch
+        {
+            // Intentionally ignored: never mask the original indexing failure.
+        }
+
+        try
+        {
             await _repository.DeleteChunksByDocumentAsync(documentId, CancellationToken.None);
         }
         catch
