@@ -389,7 +389,8 @@ public sealed class DocumentService
     {
         // Guarded independently: in the dominant failure mode nothing was upserted, so the
         // vector delete is a no-op that must not be able to prevent the chunk delete that
-        // actually matters.
+        // actually matters. Every store deletes by chunk-id prefix, so the order creates
+        // no dependency between the two.
         try
         {
             await _vectorStore.DeleteByDocumentIdAsync(documentId, CancellationToken.None);
