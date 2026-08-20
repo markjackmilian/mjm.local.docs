@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Models;
+using Mjm.LocalDocs.Core.Models.Dashboard;
 using Mjm.LocalDocs.Infrastructure.Persistence.Entities;
 
 namespace Mjm.LocalDocs.Infrastructure.Persistence.Repositories;
@@ -320,6 +321,63 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
 
         _context.Documents.RemoveRange(entities);
         await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    #endregion
+
+    #region Dashboard Aggregates
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DocumentContribution>> GetContributionsSinceAsync(
+        DateTimeOffset since,
+        CancellationToken cancellationToken = default)
+    {
+        // The projection translates; a `Where(d => d.CreatedAt >= since)` does not — the SQLite
+        // provider refuses relational comparisons on DateTimeOffset. So read the two scalar
+        // columns and apply the window in memory. This stays cheap because the projection never
+        // touches FileContent; materialising DocumentEntity is the bug this method exists to avoid.
+        var contributions = await _context.Documents
+            .AsNoTracking()
+            .Select(d => new DocumentContribution(d.CreatedAt, d.ParentDocumentId == null))
+            .ToListAsync(cancellationToken);
+
+        return contributions.Where(c => c.CreatedAt >= since).ToList();
+    }
+
+    /// <inheritdoc />
+    public Task<int> CountActiveDocumentsAsync(CancellationToken cancellationToken = default)
+    {
+        return _context.Documents
+            .AsNoTracking()
+            .CountAsync(d => !d.IsSuperseded, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<DateTimeOffset?> GetLastContributionAtAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // MaxAsync on a DateTimeOffset column throws on the SQLite provider, so project the
+        // single column and aggregate in memory.
+        var timestamps = await _context.Documents
+            .AsNoTracking()
+            .Select(d => d.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return timestamps.Count == 0 ? null : timestamps.Max();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, int>> GetActiveDocumentCountsByProjectAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _context.Documents
+            .AsNoTracking()
+            .Where(d => !d.IsSuperseded)
+            .GroupBy(d => d.ProjectId)
+            .Select(g => new { ProjectId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(r => r.ProjectId, r => r.Count);
     }
 
     #endregion

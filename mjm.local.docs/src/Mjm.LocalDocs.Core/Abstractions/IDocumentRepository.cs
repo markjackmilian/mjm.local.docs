@@ -1,4 +1,5 @@
 using Mjm.LocalDocs.Core.Models;
+using Mjm.LocalDocs.Core.Models.Dashboard;
 
 namespace Mjm.LocalDocs.Core.Abstractions;
 
@@ -173,6 +174,52 @@ public interface IDocumentRepository
     /// <param name="cancellationToken">Cancellation token.</param>
     Task DeleteDocumentsByProjectAsync(
         string projectId,
+        CancellationToken cancellationToken = default);
+
+    #endregion
+
+    #region Dashboard Aggregates
+
+    /// <summary>
+    /// Gets one record per document version created at or after the given instant.
+    /// Superseded documents are included: the series counts creation events, not present state.
+    /// </summary>
+    /// <remarks>
+    /// Implementations must apply the window in memory over a scalar column projection: the
+    /// SQLite provider cannot translate a relational comparison on a <see cref="DateTimeOffset"/>.
+    /// </remarks>
+    /// <param name="since">Inclusive lower bound on <see cref="Document.CreatedAt"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Contribution records, in no guaranteed order.</returns>
+    Task<IReadOnlyList<DocumentContribution>> GetContributionsSinceAsync(
+        DateTimeOffset since,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts documents that are not superseded.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of active documents.</returns>
+    Task<int> CountActiveDocumentsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the most recent <see cref="Document.CreatedAt"/> across all documents,
+    /// superseded ones included.
+    /// </summary>
+    /// <remarks>
+    /// Implementations must aggregate in memory over a scalar column projection: the SQLite
+    /// provider cannot apply <c>Max</c> to a <see cref="DateTimeOffset"/> column.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The latest creation timestamp, or null when there are no documents.</returns>
+    Task<DateTimeOffset?> GetLastContributionAtAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts active documents per project in a single query.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Project identifier to active document count. Projects with none are absent.</returns>
+    Task<IReadOnlyDictionary<string, int>> GetActiveDocumentCountsByProjectAsync(
         CancellationToken cancellationToken = default);
 
     #endregion

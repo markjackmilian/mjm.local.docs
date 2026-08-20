@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Models;
+using Mjm.LocalDocs.Core.Models.Dashboard;
 
 namespace Mjm.LocalDocs.Infrastructure.VectorStore;
 
@@ -287,6 +288,50 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         }
 
         return Task.CompletedTask;
+    }
+
+    #endregion
+
+    #region Dashboard Aggregates
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DocumentContribution>> GetContributionsSinceAsync(
+        DateTimeOffset since,
+        CancellationToken cancellationToken = default)
+    {
+        var contributions = _documents.Values
+            .Where(d => d.CreatedAt >= since)
+            .Select(d => new DocumentContribution(d.CreatedAt, d.ParentDocumentId == null))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<DocumentContribution>>(contributions);
+    }
+
+    /// <inheritdoc />
+    public Task<int> CountActiveDocumentsAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(_documents.Values.Count(d => !d.IsSuperseded));
+    }
+
+    /// <inheritdoc />
+    public Task<DateTimeOffset?> GetLastContributionAtAsync(CancellationToken cancellationToken = default)
+    {
+        if (_documents.IsEmpty)
+            return Task.FromResult<DateTimeOffset?>(null);
+
+        return Task.FromResult<DateTimeOffset?>(_documents.Values.Max(d => d.CreatedAt));
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<string, int>> GetActiveDocumentCountsByProjectAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var counts = _documents.Values
+            .Where(d => !d.IsSuperseded)
+            .GroupBy(d => d.ProjectId)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        return Task.FromResult<IReadOnlyDictionary<string, int>>(counts);
     }
 
     #endregion
