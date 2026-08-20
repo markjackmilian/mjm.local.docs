@@ -1839,9 +1839,12 @@ Add these private helpers after `FindDocumentsMissingEmbeddingsAsync`:
 
     private static string FormatLabel(DateTimeOffset start, GrowthGranularity granularity)
     {
+        // Invariant, not CurrentCulture: the rest of this UI is English, and a server whose
+        // culture is not English rendered an axis reading "set, ott, nov" under English
+        // headings. One language on the page beats a locale-correct axis.
         return granularity == GrowthGranularity.Monthly
-            ? start.ToString("MMM", CultureInfo.CurrentCulture)
-            : start.ToString("dd/MM", CultureInfo.CurrentCulture);
+            ? start.ToString("MMM", CultureInfo.InvariantCulture)
+            : start.ToString("dd/MM", CultureInfo.InvariantCulture);
     }
 ```
 
@@ -3182,6 +3185,7 @@ Overwrite `src/Mjm.LocalDocs.Server/Components/Pages/Home.razor`:
 @inject IDocumentRepository DocumentRepository
 @inject DashboardMetricsService Metrics
 @inject NavigationManager Navigation
+@inject ISnackbar Snackbar
 
 <PageTitle>Dashboard - Local Docs</PageTitle>
 
@@ -3192,7 +3196,15 @@ Overwrite `src/Mjm.LocalDocs.Server/Components/Pages/Home.razor`:
 else if (_metrics is null)
 {
     <MudAlert Severity="Severity.Error" Class="my-4">
-        Could not load the dashboard. @_loadError
+        <div class="d-flex align-center justify-space-between flex-wrap" style="gap: 12px;">
+            <span>Could not load the dashboard. @_loadError</span>
+            <MudButton Variant="Variant.Filled"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Rounded.Refresh"
+                       OnClick="@LoadDataAsync">
+                Retry
+            </MudButton>
+        </div>
     </MudAlert>
 }
 else
@@ -3366,8 +3378,15 @@ else
         }
         catch (Exception ex)
         {
-            _metrics = null;
             _loadError = ex.Message;
+
+            // Keep the last good payload. A transient failure on a granularity toggle used to
+            // blank the whole working dashboard, leaving a bare alert and no way back except a
+            // browser refresh. Only a first load with nothing to fall back on shows the alert.
+            if (_metrics is not null)
+            {
+                Snackbar.Add($"Could not refresh the dashboard: {ex.Message}", Severity.Error);
+            }
         }
         finally
         {
@@ -3377,6 +3396,12 @@ else
 
     private async Task OnGranularityChangedAsync(GrowthGranularity granularity)
     {
+        // The loading state only hides the toggle after a render round-trip, so two quick
+        // clicks can run two reloads against the same fields. Whichever finished last would
+        // win, leaving the granularity label describing data from the other request.
+        if (_loading)
+            return;
+
         _granularity = granularity;
         await LoadDataAsync();
     }

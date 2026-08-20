@@ -106,7 +106,7 @@ All four vector stores support both additions without friction: `chunk_embedding
 
 A concrete `sealed` class, mirroring how `DocumentService` is registered and consumed. Bucketing happens **in C#**, not SQL: date bucketing is provider-specific (`strftime` vs `DATEPART`) and this project supports both, so a C# fold is provider-agnostic — and it makes the granularity selector nearly free.
 
-The service owns the window arithmetic. `GetMetricsAsync(granularity, ct)` derives `since` from the granularity — the start of the bucket 11 periods back, so that 12 buckets including the current partial one are covered — and passes it to `GetContributionsSinceAsync`. It also formats `GrowthBucket.Label`: abbreviated month name for `Monthly`, ISO week start date (`dd/MM`) for `Weekly`, using `CultureInfo.CurrentCulture` so labels follow the server locale. Weeks start Monday.
+The service owns the window arithmetic. `GetMetricsAsync(granularity, ct)` derives `since` from the granularity — the start of the bucket 11 periods back, so that 12 buckets including the current partial one are covered — and passes it to `GetContributionsSinceAsync`. It also formats `GrowthBucket.Label`: abbreviated month name for `Monthly`, ISO week start date (`dd/MM`) for `Weekly`, using `CultureInfo.InvariantCulture` so the axis stays English like every other label on the page (a server with a non-English culture otherwise renders "set, ott, nov" under English headings). Weeks start Monday.
 
 **Fast path for index health.** Reconciling every chunk on every home page load costs O(total chunks). Instead:
 
