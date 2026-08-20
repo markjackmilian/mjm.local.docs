@@ -94,18 +94,45 @@ public sealed class DocumentServiceIndexingTests
     }
 
     [Fact]
-    public async Task AddDocumentAsync_WhenCancelled_PropagatesCancellationUnwrapped()
+    public async Task AddDocumentAsync_WhenCallerCancels_PropagatesCancellationUnwrapped()
     {
         var document = CreateDocument();
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
         _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>())
             .Returns(document);
         GivenChunks("doc-1", 2);
         _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new OperationCanceledException());
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => _sut.AddDocumentAsync(document));
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => _sut.AddDocumentAsync(document, cts.Token));
 
-        await _repository.Received(1).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        // The compensation must not inherit the cancelled token, or it could not run at all.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync(
+            "doc-1", Arg.Is<CancellationToken>(t => !t.IsCancellationRequested));
+        await _repository.Received(1).DeleteChunksByDocumentAsync(
+            "doc-1", Arg.Is<CancellationToken>(t => !t.IsCancellationRequested));
+    }
+
+    [Fact]
+    public async Task AddDocumentAsync_WhenProviderTimesOut_WrapsTheTaskCanceledException()
+    {
+        var document = CreateDocument();
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>())
+            .Returns(document);
+        GivenChunks("doc-1", 2);
+        // An HttpClient timeout surfaces as TaskCanceledException with the caller's token intact,
+        // so it must be wrapped like any other provider failure, not mistaken for cancellation.
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new TaskCanceledException("The request timed out."));
+
+        var ex = await Assert.ThrowsAsync<DocumentIndexingException>(
+            () => _sut.AddDocumentAsync(document));
+
+        Assert.Equal("doc-1", ex.DocumentId);
+        Assert.IsType<TaskCanceledException>(ex.InnerException);
     }
 
     [Fact]
@@ -124,6 +151,8 @@ public sealed class DocumentServiceIndexingTests
             () => _sut.AddDocumentAsync(document));
 
         Assert.IsType<HttpRequestException>(ex.InnerException);
+        // The chunk delete must still run even though the vector delete threw.
+        await _repository.Received(1).DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
 
     [Fact]

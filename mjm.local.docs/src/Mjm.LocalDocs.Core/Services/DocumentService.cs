@@ -50,6 +50,7 @@ public sealed class DocumentService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The added document with FileStorageLocation set if using external storage.</returns>
     /// <exception cref="ArgumentException">Thrown when document.FileContent is null.</exception>
+    /// <exception cref="DocumentIndexingException">Thrown when the document was saved but could not be indexed.</exception>
     public async Task<Document> AddDocumentAsync(
         Document document,
         CancellationToken cancellationToken = default)
@@ -118,7 +119,7 @@ public sealed class DocumentService
         {
             await IndexDocumentAsync(document, cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             await DiscardPartialIndexAsync(document.Id);
             throw;
@@ -143,6 +144,7 @@ public sealed class DocumentService
     /// <exception cref="InvalidOperationException">
     /// Thrown when the existing document is not found or is already superseded.
     /// </exception>
+    /// <exception cref="DocumentIndexingException">Thrown when the new version was saved but could not be indexed. The previous version is left active.</exception>
     public async Task<Document> UpdateDocumentAsync(
         string existingDocumentId,
         Document newVersionDocument,
@@ -385,9 +387,20 @@ public sealed class DocumentService
     /// </remarks>
     private async Task DiscardPartialIndexAsync(string documentId)
     {
+        // Guarded independently: in the dominant failure mode nothing was upserted, so the
+        // vector delete is a no-op that must not be able to prevent the chunk delete that
+        // actually matters.
         try
         {
             await _vectorStore.DeleteByDocumentIdAsync(documentId, CancellationToken.None);
+        }
+        catch
+        {
+            // Intentionally ignored: never mask the original indexing failure.
+        }
+
+        try
+        {
             await _repository.DeleteChunksByDocumentAsync(documentId, CancellationToken.None);
         }
         catch
