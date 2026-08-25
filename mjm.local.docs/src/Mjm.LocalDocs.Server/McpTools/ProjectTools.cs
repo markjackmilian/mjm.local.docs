@@ -14,11 +14,13 @@ public sealed class ProjectTools
 {
     private readonly IProjectRepository _projectRepository;
     private readonly DocumentService _documentService;
+    private readonly ProjectService _projectService;
 
-    public ProjectTools(IProjectRepository projectRepository, DocumentService documentService)
+    public ProjectTools(IProjectRepository projectRepository, DocumentService documentService, ProjectService projectService)
     {
         _projectRepository = projectRepository;
         _documentService = documentService;
+        _projectService = projectService;
     }
 
     [McpServerTool(Name = "create_project")]
@@ -118,7 +120,7 @@ public sealed class ProjectTools
 
         try
         {
-            var deleted = await _projectRepository.DeleteAsync(projectId, cancellationToken);
+            var deleted = await _projectService.DeleteProjectAsync(projectId, cancellationToken);
             if (deleted)
             {
                 return $"Project '{project.Name}' (ID: {projectId}) and all its documents have been deleted.";

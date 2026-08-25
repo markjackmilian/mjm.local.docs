@@ -3,8 +3,10 @@
 @rendermode InteractiveServer
  @using Mjm.LocalDocs.Core.Abstractions
  @using Mjm.LocalDocs.Core.Models
+ @using Mjm.LocalDocs.Core.Services
  @inject IProjectRepository ProjectRepository
  @inject IDocumentRepository DocumentRepository
+ @inject ProjectService ProjectService
  @inject NavigationManager Navigation
  @inject IDialogService DialogService
  @inject ISnackbar Snackbar
@@ -172,7 +174,7 @@
 
          if (result is { Canceled: false })
          {
-             var deleted = await ProjectRepository.DeleteAsync(project.Id);
+             var deleted = await ProjectService.DeleteProjectAsync(project.Id);
              if (deleted)
              {
                  Snackbar.Add($"Project \"{project.Name}\" deleted successfully.", Severity.Success);

@@ -41,6 +41,12 @@ public static class ServiceCollectionExtensions
                 fileStorageProvider);
         });
 
+        services.AddScoped<ProjectService>(sp => new ProjectService(
+            sp.GetRequiredService<IProjectRepository>(),
+            sp.GetRequiredService<IDocumentRepository>(),
+            sp.GetRequiredService<IVectorStore>(),
+            sp.GetService<IDocumentFileStorage>()));
+
         // Chat service for static RAG path (AgenticProjectChatService in Infrastructure wraps this)
         services.AddScoped<ProjectChatService>();
 

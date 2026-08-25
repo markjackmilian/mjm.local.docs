@@ -13,6 +13,7 @@
 @using Microsoft.Extensions.Options
 @inject IProjectRepository ProjectRepository
 @inject DocumentService DocumentService
+@inject ProjectService ProjectService
 @inject CompositeDocumentReader DocumentReader
 @inject NavigationManager Navigation
 @inject IDialogService DialogService
@@ -465,7 +466,7 @@ else
 
         if (result is { Canceled: false })
         {
-            var deleted = await ProjectRepository.DeleteAsync(_project.Id);
+            var deleted = await ProjectService.DeleteProjectAsync(_project.Id);
             if (deleted)
             {
                 Snackbar.Add($"Project \"{_project.Name}\" deleted successfully.", Severity.Success);
