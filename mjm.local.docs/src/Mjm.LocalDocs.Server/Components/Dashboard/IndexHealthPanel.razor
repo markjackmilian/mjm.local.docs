@@ -41,7 +41,7 @@
             </MudText>
         </div>
 
-        @if (Health.Broken.Count == 0)
+        @if (Health.Broken.Count == 0 && Health.InterruptedUpdates.Count == 0)
         {
             <div class="d-flex align-center" style="gap: 8px;">
                 <MudIcon Icon="@Icons.Material.Rounded.CheckCircle"
@@ -72,6 +72,33 @@
                         Reindex
                     </MudButton>
                 </div>
+            }
+
+            @if (Health.InterruptedUpdates.Count > 0)
+            {
+                <MudText Style="font-size: 0.75rem; font-weight: 600; color: var(--ld-text-primary); margin: 12px 0 6px;">
+                    Updates that never finished
+                </MudText>
+                <MudText Style="font-size: 0.6875rem; color: var(--ld-text-muted); margin-bottom: 6px;">
+                    Both versions are searchable, so both answer the same query.
+                </MudText>
+
+                @foreach (var update in Health.InterruptedUpdates)
+                {
+                    <div class="d-flex align-center justify-space-between" style="gap: 8px; padding: 6px 0; border-top: 1px solid var(--ld-border);">
+                        <MudTooltip Text="@($"{update.FileName} should have replaced {update.ParentFileName}")">
+                            <MudText Style="font-size: 0.75rem; color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px;">
+                                @update.FileName
+                            </MudText>
+                        </MudTooltip>
+                        <MudButton Variant="Variant.Text"
+                                   Size="Size.Small"
+                                   Disabled="@_busy"
+                                   OnClick="@(() => CompleteUpdateAsync(update))">
+                            Finish
+                        </MudButton>
+                    </div>
+                }
             }
         }
     }
@@ -200,6 +227,53 @@
                 Snackbar.Add(
                     $"Reindexed, but the panel could not refresh: {ex.Message}",
                     Severity.Warning);
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CompleteUpdateAsync(InterruptedUpdate update)
+    {
+        // Same round-trip race as the other handlers, and the same reason it matters: this calls
+        // the wipe-and-rebuild path, which is safe to retry sequentially but not concurrently.
+        if (_busy)
+            return;
+
+        _busy = true;
+        try
+        {
+            try
+            {
+                // Reindexing the newer version rebuilds it and then retires every still-active
+                // ancestor, which is exactly what closing the update means.
+                await Documents.ReindexDocumentAsync(update.DocumentId);
+            }
+            catch (DocumentIndexingException ex)
+            {
+                Snackbar.Add(
+                    $"Could not finish the update of {update.FileName}: {ex.InnerException?.Message ?? ex.Message}",
+                    Severity.Error);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Could not finish the update of {update.FileName}: {ex.Message}", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add($"{update.ParentFileName} has been retired.", Severity.Success);
+
+            try
+            {
+                var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
+                await HealthChanged.InvokeAsync(health);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Finished, but the panel could not refresh: {ex.Message}", Severity.Warning);
             }
         }
         finally
