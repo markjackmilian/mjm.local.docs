@@ -122,9 +122,17 @@ public sealed class ProjectServiceTests
 
         await CreateSut().DeleteProjectAsync("proj-1");
 
-        // Without the lock, a reindex of doc-1 can write embeddings between this sweep visiting it
-        // and the cascade removing its row — orphans with no document row left to key a cleanup off.
-        await _locks.Received().AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+        // Serializes the sweep with a reindex ancestor walk so they cannot interleave a
+        // half-written index. The lock is acquired before the vector-store delete and released
+        // before the next document (or before the project row delete if it was the last).
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _vectorStore.DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+
+        // Verify the lock handle is disposed.
+        await _lockHandle.Received(1).DisposeAsync();
     }
 
     [Fact]

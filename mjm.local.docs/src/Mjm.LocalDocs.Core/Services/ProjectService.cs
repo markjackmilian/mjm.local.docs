@@ -54,8 +54,9 @@ public sealed class ProjectService
     /// Sweeps the project's documents twice, stripping each under its own lock: once immediately,
     /// and again right before the project row is deleted, so a document created between the two
     /// reads is not missed. A document created after the second sweep can still be missed — that
-    /// residual window, between the second sweep and the delete, is not closed by anything short
-    /// of a transaction spanning the document, vector, and file stores, which do not share one.
+    /// residual window, from the second read to the delete, covers the second strip loop and is
+    /// not closed by anything short of a transaction spanning the document, vector, and file
+    /// stores, which do not share one.
     /// </para>
     /// <para>
     /// A failure part-way through leaves the project row and every document row intact — the
@@ -63,6 +64,12 @@ public sealed class ProjectService
     /// already swept before the failure has permanently lost its original file even though its
     /// row survives: the delete already happened, nothing records that it did, and no later
     /// cleanup has a way to notice.
+    /// </para>
+    /// <para>
+    /// A document already swept can have its embeddings written again by a concurrent reindex that
+    /// acquires its lock after this sweep and before the project row is deleted. Because the swept
+    /// set has already marked the document, the second sweep will not remove those newly-written
+    /// embeddings, leaving orphans with no document row.
     /// </para>
     /// </remarks>
     /// <param name="projectId">The project identifier.</param>
@@ -88,8 +95,8 @@ public sealed class ProjectService
         // Read again immediately before the delete. A document created between the first read and
         // here would otherwise lose its row to the cascade with its file and embeddings untouched —
         // a permanent leak produced by the method meant to prevent one. This narrows that window to
-        // the gap between this sweep and the next statement; it does not close it, and nothing
-        // short of a transaction spanning three stores would.
+        // the gap from this read to the delete, covering the second sweep; it does not close it, and
+        // nothing short of a transaction spanning three stores would.
         await StripDocumentsAsync(
             await _documents.GetFileLocationsByProjectAsync(projectId, cancellationToken),
             swept,
@@ -108,9 +115,10 @@ public sealed class ProjectService
             if (!swept.Add(location.DocumentId))
                 continue;
 
-            // Under the document's own lock: without it a concurrent reindex can write embeddings
-            // between this strip and the cascade that removes the row, leaving orphans with no
-            // document row left for any cleanup to key off.
+            // Under the document's own lock: serializes the sweep with a reindex ancestor walk so
+            // they cannot interleave a half-written index during the strip. This does not exclude
+            // a reindex that acquires the lock after this iteration: it can write embeddings before
+            // the project row is deleted, leaving orphans with no document row for cleanup to key off.
             await using var documentLock = await _locks.AcquireAsync(location.DocumentId, cancellationToken);
 
             if (_fileStorage is not null && !string.IsNullOrEmpty(location.StorageLocation))
