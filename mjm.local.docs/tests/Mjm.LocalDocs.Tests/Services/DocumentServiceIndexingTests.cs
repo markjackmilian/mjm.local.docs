@@ -242,7 +242,11 @@ public sealed class DocumentServiceIndexingTests
         _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns([new float[] { 0.1f }]);
 
-        await _sut.ReindexDocumentAsync("doc-2");
+        // A live token from a source, not the default: CancellationToken.None IS default, so
+        // passing nothing would make the assertion below pass no matter what the closure used.
+        using var cts = new CancellationTokenSource();
+
+        await _sut.ReindexDocumentAsync("doc-2", cts.Token);
 
         // Superseding first would leave a superseded document still answering searches if the
         // deletes never ran — invisible to the dashboard and unrepairable.
