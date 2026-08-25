@@ -15,11 +15,15 @@ public sealed class DocumentServiceIndexingTests
     private readonly IVectorStore _vectorStore = Substitute.For<IVectorStore>();
     private readonly IDocumentProcessor _processor = Substitute.For<IDocumentProcessor>();
     private readonly IEmbeddingService _embeddingService = Substitute.For<IEmbeddingService>();
+    private readonly IDocumentLockRegistry _locks = Substitute.For<IDocumentLockRegistry>();
+    private readonly IAsyncDisposable _lockHandle = Substitute.For<IAsyncDisposable>();
     private readonly DocumentService _sut;
 
     public DocumentServiceIndexingTests()
     {
-        _sut = new DocumentService(_repository, _vectorStore, _processor, _embeddingService);
+        _locks.AcquireAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_lockHandle);
+
+        _sut = new DocumentService(_repository, _vectorStore, _processor, _embeddingService, _locks);
     }
 
     private static Document CreateDocument(
@@ -546,5 +550,68 @@ public sealed class DocumentServiceIndexingTests
         var indexed = await _sut.ReindexDocumentAsync("doc-1");
 
         Assert.Equal(1, indexed);
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_TakesTheDocumentLock()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        // The UI's per-component busy flags cannot stop two circuits, or a reindex racing an MCP
+        // update, from interleaving a wipe with a rebuild.
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ReleasesTheLockWhenIndexingFails()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new HttpRequestException("provider unreachable"));
+
+        await Assert.ThrowsAsync<DocumentIndexingException>(() => _sut.ReindexDocumentAsync("doc-1"));
+
+        // A lock leaked on the failure path would wedge that document forever.
+        await _lockHandle.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenRefused_DoesNotHoldTheLockOpen()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument(isSuperseded: true));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.ReindexDocumentAsync("doc-1"));
+
+        // Whether the guard runs inside or outside the lock, the lock must not be left held.
+        if (_locks.ReceivedCalls().Any())
+        {
+            await _lockHandle.Received(1).DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_TakesTheLockOnTheDocumentBeingReplaced()
+    {
+        var existing = CreateDocument("doc-1");
+        var newVersion = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(existing);
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>()).Returns(newVersion);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.UpdateDocumentAsync("doc-1", newVersion);
+
+        // The IsSuperseded read followed by the supersede is a check-then-act: two concurrent
+        // updates of one document would both pass the guard and leave two active siblings.
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
     }
 }

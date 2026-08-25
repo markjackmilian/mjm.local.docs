@@ -14,6 +14,7 @@ public sealed class DocumentService
     private readonly IVectorStore _vectorStore;
     private readonly IDocumentProcessor _processor;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IDocumentLockRegistry _locks;
     private readonly IDocumentFileStorage? _fileStorage;
     private readonly FileStorageProvider _fileStorageProvider;
 
@@ -24,6 +25,7 @@ public sealed class DocumentService
     /// <param name="vectorStore">Vector store for embeddings.</param>
     /// <param name="processor">Document processor for chunking.</param>
     /// <param name="embeddingService">Embedding service.</param>
+    /// <param name="locks">Per-document lock registry, serialising wipe-and-rebuild operations.</param>
     /// <param name="fileStorage">Optional file storage for external file content storage.</param>
     /// <param name="fileStorageProvider">The configured file storage provider type.</param>
     public DocumentService(
@@ -31,6 +33,7 @@ public sealed class DocumentService
         IVectorStore vectorStore,
         IDocumentProcessor processor,
         IEmbeddingService embeddingService,
+        IDocumentLockRegistry locks,
         IDocumentFileStorage? fileStorage = null,
         FileStorageProvider fileStorageProvider = FileStorageProvider.Database)
     {
@@ -38,6 +41,7 @@ public sealed class DocumentService
         _vectorStore = vectorStore;
         _processor = processor;
         _embeddingService = embeddingService;
+        _locks = locks;
         _fileStorage = fileStorage;
         _fileStorageProvider = fileStorageProvider;
     }
@@ -150,6 +154,8 @@ public sealed class DocumentService
         Document newVersionDocument,
         CancellationToken cancellationToken = default)
     {
+        await using var _ = await _locks.AcquireAsync(existingDocumentId, cancellationToken);
+
         // 1. Validate existing document
         var existing = await _repository.GetDocumentAsync(existingDocumentId, cancellationToken);
         if (existing is null)
@@ -218,6 +224,8 @@ public sealed class DocumentService
                 $"Document '{documentId}' has a newer version that is still active. " +
                 "Reindex that newer version instead — doing so also retires this one.");
         }
+
+        await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
 
         int chunkCount;
 

@@ -24,19 +24,21 @@ public static class ServiceCollectionExtensions
             var vectorStore = sp.GetRequiredService<IVectorStore>();
             var processor = sp.GetRequiredService<IDocumentProcessor>();
             var embeddingService = sp.GetRequiredService<IEmbeddingService>();
-            
+            var locks = sp.GetRequiredService<IDocumentLockRegistry>();
+
             // IDocumentFileStorage is optional - null if not registered
             var fileStorage = sp.GetService<IDocumentFileStorage>();
-            
+
             // Get FileStorageProvider from options
             var options = sp.GetService<IOptions<LocalDocsOptions>>()?.Value;
             var fileStorageProvider = options?.FileStorage.Provider ?? FileStorageProvider.Database;
-            
+
             return new DocumentService(
                 repository,
                 vectorStore,
                 processor,
                 embeddingService,
+                locks,
                 fileStorage,
                 fileStorageProvider);
         });

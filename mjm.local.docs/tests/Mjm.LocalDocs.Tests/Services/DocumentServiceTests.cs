@@ -14,6 +14,8 @@ public sealed class DocumentServiceTests
     private readonly IVectorStore _vectorStore;
     private readonly IDocumentProcessor _processor;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IDocumentLockRegistry _locks;
+    private readonly IAsyncDisposable _lockHandle;
     private readonly DocumentService _sut;
 
     public DocumentServiceTests()
@@ -22,12 +24,17 @@ public sealed class DocumentServiceTests
         _vectorStore = Substitute.For<IVectorStore>();
         _processor = Substitute.For<IDocumentProcessor>();
         _embeddingService = Substitute.For<IEmbeddingService>();
+        _locks = Substitute.For<IDocumentLockRegistry>();
+        _lockHandle = Substitute.For<IAsyncDisposable>();
+
+        _locks.AcquireAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_lockHandle);
 
         _sut = new DocumentService(
             _repository,
             _vectorStore,
             _processor,
-            _embeddingService);
+            _embeddingService,
+            _locks);
     }
 
     #region Helper Methods
