@@ -12,6 +12,7 @@ using Mjm.LocalDocs.Core.Configuration;
 using Mjm.LocalDocs.Core.Services;
 using Mjm.LocalDocs.Infrastructure.Chat;
 using LocalDocsChatOptions = Mjm.LocalDocs.Core.Configuration.ChatOptions;
+using Mjm.LocalDocs.Infrastructure.Concurrency;
 using Mjm.LocalDocs.Infrastructure.Documents;
 using Mjm.LocalDocs.Infrastructure.Embeddings;
 using Mjm.LocalDocs.Infrastructure.FileStorage;
@@ -69,6 +70,11 @@ public static class ServiceCollectionExtensions
         // Processing services
         services.AddSingleton<IDocumentProcessor>(
             new SimpleDocumentProcessor(options.Chunking.MaxChunkSize, options.Chunking.OverlapSize));
+
+        // Per-document lock: guards ReindexDocumentAsync/UpdateDocumentAsync against interleaving.
+        // Not storage-specific, so it is registered unconditionally here rather than in
+        // ConfigureStorage, and must remain a singleton — see IDocumentLockRegistry's remarks.
+        services.AddSingleton<IDocumentLockRegistry, DocumentLockRegistry>();
 
         // Document readers
         AddDocumentReaders(services);
