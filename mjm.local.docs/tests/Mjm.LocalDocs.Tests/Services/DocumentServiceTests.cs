@@ -177,10 +177,13 @@ public sealed class DocumentServiceTests
             .Returns(chunks);
         // Both chunks are owned by an active document, so the new join admits them. Without this
         // stub every chunk is now an "unknown owner" and gets dropped by design.
+        // Context rows are reversed deliberately: the ranking assertions below can only pass if
+        // the implementation builds results by iterating the ranked vectorResults list, not the
+        // (unordered) context list.
         _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns([
-                new ChunkDocumentContext("chunk-1", "doc-1", "proj-1", false),
-                new ChunkDocumentContext("chunk-2", "doc-1", "proj-1", false)
+                new ChunkDocumentContext("chunk-2", "doc-1", "proj-1", false),
+                new ChunkDocumentContext("chunk-1", "doc-1", "proj-1", false)
             ]);
 
         // Act

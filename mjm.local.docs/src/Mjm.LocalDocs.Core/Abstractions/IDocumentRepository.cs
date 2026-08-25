@@ -306,7 +306,11 @@ public interface IDocumentRepository
     /// <remarks>
     /// Answers both of a search's post-filter questions — is this chunk's document in the
     /// requested project, and has it been superseded — in one join over four scalar columns.
-    /// Unknown chunk ids are omitted rather than reported.
+    /// Unknown chunk ids are omitted rather than reported. A chunk whose owning document row
+    /// is absent is also omitted, allowing callers to drop orphaned embeddings reliably.
+    /// The relational stores cannot produce that state (DocumentChunks.DocumentId is a foreign
+    /// key with cascade delete), so this clause matters for the in-memory repository and any
+    /// store without that constraint.
     /// </remarks>
     /// <param name="chunkIds">The chunk identifiers to resolve.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
