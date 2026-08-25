@@ -10,6 +10,19 @@ public sealed class DocumentLockRegistryTests
 {
     private readonly IDocumentLockRegistry _sut = new DocumentLockRegistry();
 
+    /// <summary>
+    /// Helper to await an AcquireAsync call with a bounded timeout.
+    /// Fails the test with a clear message if the timeout is exceeded, ensuring the test
+    /// fails fast instead of hanging on a regression like a deadlock.
+    /// </summary>
+    private static async Task<IAsyncDisposable> AwaitWithTimeout(Task<IAsyncDisposable> acquireTask)
+    {
+        var completed = await Task.WhenAny(acquireTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.True(acquireTask.IsCompleted, "Lock acquisition timed out after 5 seconds; likely deadlock.");
+
+        return await acquireTask;
+    }
+
     [Fact]
     public async Task AcquireAsync_ForOneDocument_BlocksASecondCallerUntilReleased()
     {
@@ -20,11 +33,8 @@ public sealed class DocumentLockRegistryTests
 
         await first.DisposeAsync();
 
-        // Bounded wait: if the release did not hand the lock over, this fails rather than hangs.
-        var handedOver = await Task.WhenAny(second, Task.Delay(TimeSpan.FromSeconds(5)));
-        Assert.Same(second, handedOver);
-
-        await (await second).DisposeAsync();
+        var secondHandle = await AwaitWithTimeout(second);
+        await secondHandle.DisposeAsync();
     }
 
     [Fact]
@@ -33,17 +43,27 @@ public sealed class DocumentLockRegistryTests
         var first = await _sut.AcquireAsync("doc-1");
 
         // Operations on different documents cannot conflict, so they must not serialise.
-        var second = await _sut.AcquireAsync("doc-2");
+        // The lock on doc-2 must be available while doc-1 is still held.
+        var second = _sut.AcquireAsync("doc-2");
+        Assert.True(second.IsCompleted, "Lock on different document should be immediately available.");
 
-        await second.DisposeAsync();
+        var secondHandle = await second;
+        await secondHandle.DisposeAsync();
         await first.DisposeAsync();
     }
 
     [Fact]
     public async Task AcquireAsync_AfterRelease_CanBeTakenAgain()
     {
-        await (await _sut.AcquireAsync("doc-1")).DisposeAsync();
-        await (await _sut.AcquireAsync("doc-1")).DisposeAsync();
+        var first = await AwaitWithTimeout(_sut.AcquireAsync("doc-1"));
+        await first.DisposeAsync();
+
+        // After disposal, the same lock must be immediately available.
+        var second = _sut.AcquireAsync("doc-1");
+        Assert.True(second.IsCompleted, "Lock should be available again after first holder released it.");
+
+        var secondHandle = await second;
+        await secondHandle.DisposeAsync();
     }
 
     [Fact]
@@ -59,7 +79,9 @@ public sealed class DocumentLockRegistryTests
 
         // The cancelled waiter must not have consumed the permit the holder still owns.
         await held.DisposeAsync();
-        await (await _sut.AcquireAsync("doc-1")).DisposeAsync();
+        var third = _sut.AcquireAsync("doc-1");
+        var thirdHandle = await AwaitWithTimeout(third);
+        await thirdHandle.DisposeAsync();
     }
 
     [Fact]
@@ -70,7 +92,7 @@ public sealed class DocumentLockRegistryTests
 
         async Task Contend()
         {
-            await using var _ = await _sut.AcquireAsync("doc-1");
+            await using var _ = await AwaitWithTimeout(_sut.AcquireAsync("doc-1"));
 
             var now = Interlocked.Increment(ref inFlight);
             maxObserved = Math.Max(maxObserved, now);

@@ -43,8 +43,9 @@ public sealed class DocumentLockRegistry : IDocumentLockRegistry
 
         public ValueTask DisposeAsync()
         {
-            // Guarded: releasing twice would raise the permit count above one and silently
-            // dissolve the mutual exclusion for every later caller.
+            // Guarded: the SemaphoreSlim is constructed with a max count of 1, so a second
+            // Release() call would throw SemaphoreFullException. This guard makes a redundant
+            // dispose a safe no-op instead.
             if (!_released)
             {
                 _released = true;
