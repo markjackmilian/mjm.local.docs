@@ -108,3 +108,12 @@ public sealed record DashboardMetrics(
     DateTimeOffset? LastContributionAt,
     IndexHealth Health,
     IReadOnlyList<GrowthBucket> Growth);
+
+/// <summary>
+/// Where a document's original file lives, if it lives outside the database.
+/// </summary>
+/// <param name="DocumentId">The document identifier.</param>
+/// <param name="StorageLocation">
+/// The external storage path, or null when the file content is held in the database row.
+/// </param>
+public sealed record DocumentFileLocation(string DocumentId, string? StorageLocation);

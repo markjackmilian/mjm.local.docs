@@ -283,5 +283,22 @@ public interface IDocumentRepository
         string documentId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets the identifier and external storage path of every document in a project,
+    /// superseded versions included.
+    /// </summary>
+    /// <remarks>
+    /// Two scalar columns, deliberately. Deleting a project has to visit each document to remove
+    /// its embeddings and its externally-stored file, neither of which any database cascade
+    /// reaches — and enumerating them through <see cref="GetDocumentsByProjectAsync"/> would
+    /// materialise every <c>FileContent</c> blob in the project to do it.
+    /// </remarks>
+    /// <param name="projectId">The project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One record per document, in no guaranteed order.</returns>
+    Task<IReadOnlyList<DocumentFileLocation>> GetFileLocationsByProjectAsync(
+        string projectId,
+        CancellationToken cancellationToken = default);
+
     #endregion
 }

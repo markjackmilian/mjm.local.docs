@@ -410,5 +410,18 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult(hasChild);
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<DocumentFileLocation>> GetFileLocationsByProjectAsync(
+        string projectId,
+        CancellationToken cancellationToken = default)
+    {
+        var locations = _documents.Values
+            .Where(d => string.Equals(d.ProjectId, projectId, StringComparison.Ordinal))
+            .Select(d => new DocumentFileLocation(d.Id, d.FileStorageLocation))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<DocumentFileLocation>>(locations);
+    }
+
     #endregion
 }

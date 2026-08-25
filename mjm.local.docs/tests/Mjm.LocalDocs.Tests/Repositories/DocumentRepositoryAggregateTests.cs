@@ -303,4 +303,38 @@ public abstract class DocumentRepositoryAggregateTests
 
         Assert.False(await Sut.HasActiveChildAsync("doc-1"));
     }
+
+    [Fact]
+    public async Task GetFileLocationsByProjectAsync_ReturnsEveryDocumentInTheProject()
+    {
+        await SeedDocumentAsync("doc-1", projectId: "proj-a");
+        await SeedDocumentAsync("doc-2", projectId: "proj-a");
+        await SeedDocumentAsync("doc-3", projectId: "proj-b");
+
+        var locations = await Sut.GetFileLocationsByProjectAsync("proj-a");
+
+        Assert.Equal(2, locations.Count);
+        Assert.Contains(locations, l => l.DocumentId == "doc-1");
+        Assert.Contains(locations, l => l.DocumentId == "doc-2");
+    }
+
+    [Fact]
+    public async Task GetFileLocationsByProjectAsync_IncludesSupersededDocuments()
+    {
+        // A superseded version still owns an external file and may still own embeddings, so
+        // deletion has to visit it too.
+        await SeedDocumentAsync("doc-1", projectId: "proj-a", isSuperseded: true);
+
+        var locations = await Sut.GetFileLocationsByProjectAsync("proj-a");
+
+        Assert.Single(locations);
+    }
+
+    [Fact]
+    public async Task GetFileLocationsByProjectAsync_WithNoDocuments_ReturnsEmpty()
+    {
+        var locations = await Sut.GetFileLocationsByProjectAsync("proj-none");
+
+        Assert.Empty(locations);
+    }
 }

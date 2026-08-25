@@ -447,6 +447,18 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
             .AnyAsync(d => !d.IsSuperseded && d.ParentDocumentId == documentId, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DocumentFileLocation>> GetFileLocationsByProjectAsync(
+        string projectId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Documents
+            .AsNoTracking()
+            .Where(d => d.ProjectId == projectId)
+            .Select(d => new DocumentFileLocation(d.Id, d.FileStorageLocation))
+            .ToListAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers
