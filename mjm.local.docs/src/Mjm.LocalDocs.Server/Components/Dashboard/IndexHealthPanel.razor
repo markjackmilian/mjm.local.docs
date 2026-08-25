@@ -156,9 +156,10 @@
         _busy = true;
         try
         {
+            int indexed;
             try
             {
-                await Documents.ReindexDocumentAsync(document.DocumentId);
+                indexed = await Documents.ReindexDocumentAsync(document.DocumentId);
             }
             catch (DocumentIndexingException ex)
             {
@@ -175,7 +176,16 @@
                 return;
             }
 
-            Snackbar.Add($"{document.FileName} is searchable again.", Severity.Success);
+            if (indexed == 0)
+            {
+                Snackbar.Add(
+                    $"{document.FileName} has no extractable text, so reindexing cannot make it searchable.",
+                    Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add($"{document.FileName} is searchable again.", Severity.Success);
+            }
 
             // Refreshed under its own handler: a failure from here means the panel is stale,
             // not that the reindex failed. Reporting it as a reindex failure would contradict

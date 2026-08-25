@@ -491,4 +491,31 @@ public sealed class DocumentServiceIndexingTests
         // later reindex of the new version can still close it.
         await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ReturnsTheNumberOfChunksItIndexed()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 3);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }, new float[] { 0.2f }, new float[] { 0.3f }]);
+
+        var indexed = await _sut.ReindexDocumentAsync("doc-1");
+
+        Assert.Equal(3, indexed);
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WhenTextYieldsNoChunks_ReturnsZeroRatherThanReportingSuccess()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        // Extracted text that produces nothing — an image-only PDF, for instance.
+        GivenChunks("doc-1", 0);
+
+        var indexed = await _sut.ReindexDocumentAsync("doc-1");
+
+        // Zero is how the caller learns the document is still not searchable, so it can say so
+        // instead of claiming a repair that did not happen.
+        Assert.Equal(0, indexed);
+    }
 }

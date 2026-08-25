@@ -188,11 +188,16 @@ public sealed class DocumentService
     /// </remarks>
     /// <param name="documentId">The document to reindex.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// The number of chunks indexed. Zero means the document's extracted text produced nothing
+    /// to index — the reindex did not fail, but the document is still not searchable and no
+    /// amount of retrying will change that. Callers must not report zero as a repair.
+    /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when the document is not found, or is superseded and therefore not meant to be indexed.
     /// </exception>
     /// <exception cref="DocumentIndexingException">Thrown when indexing fails again.</exception>
-    public async Task ReindexDocumentAsync(
+    public async Task<int> ReindexDocumentAsync(
         string documentId,
         CancellationToken cancellationToken = default)
     {
@@ -236,9 +241,11 @@ public sealed class DocumentService
         // either — and superseding the parent here would strip the chain's only working index,
         // on the very button the dashboard offers for zero-chunk documents.
         if (chunkCount == 0)
-            return;
+            return 0;
 
         await CloseInterruptedUpdateAsync(document);
+
+        return chunkCount;
     }
 
     /// <summary>
