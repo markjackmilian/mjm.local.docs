@@ -71,10 +71,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDocumentProcessor>(
             new SimpleDocumentProcessor(options.Chunking.MaxChunkSize, options.Chunking.OverlapSize));
 
-        // Per-document lock: guards ReindexDocumentAsync/UpdateDocumentAsync against interleaving.
-        // Not storage-specific, so it is registered unconditionally here rather than in
-        // ConfigureStorage, and must remain a singleton — see IDocumentLockRegistry's remarks.
-        services.AddSingleton<IDocumentLockRegistry, DocumentLockRegistry>();
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
 
         // Document readers
         AddDocumentReaders(services);
@@ -98,6 +96,18 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<PdfDocumentReader>(),
             sp.GetRequiredService<WordDocumentReader>()
         ]));
+    }
+
+    /// <summary>
+    /// Registers singletons every composition needs, regardless of storage or embedding provider configuration.
+    /// Kept in one place because <c>AddLocalDocsCoreServices</c> hard-requires them: a registration
+    /// duplicated across the public overloads is a registration one of them will eventually forget.
+    /// </summary>
+    private static void AddCrossCuttingSingletons(IServiceCollection services)
+    {
+        // Must be a singleton: the services that take it are scoped, so a per-instance lock
+        // would be per-request and would serialise nothing. See IDocumentLockRegistry's remarks.
+        services.AddSingleton<IDocumentLockRegistry, DocumentLockRegistry>();
     }
 
     private static void ConfigureStorage(
@@ -502,6 +512,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEmbeddingService>(
             new SemanticKernelEmbeddingService(embeddingGenerator, embeddingDimension));
 
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
+
         // Document readers
         AddDocumentReaders(services);
 
@@ -536,6 +549,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDocumentProcessor>(new SimpleDocumentProcessor());
         services.AddSingleton<IEmbeddingService>(new FakeEmbeddingService(embeddingDimension));
 
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
+
         // Document readers
         AddDocumentReaders(services);
 
@@ -560,6 +576,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEmbeddingService>(
             new SemanticKernelEmbeddingService(embeddingGenerator, embeddingDimension));
 
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
+
         // Document readers
         AddDocumentReaders(services);
 
@@ -583,6 +602,9 @@ public static class ServiceCollectionExtensions
         // Processing services
         services.AddSingleton<IDocumentProcessor>(new SimpleDocumentProcessor());
         services.AddSingleton<IEmbeddingService>(new FakeEmbeddingService(embeddingDimension));
+
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
 
         // Document readers
         AddDocumentReaders(services);
@@ -610,6 +632,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDocumentProcessor>(new SimpleDocumentProcessor());
         services.AddSingleton<IEmbeddingService>(
             new SemanticKernelEmbeddingService(embeddingGenerator, embeddingDimension));
+
+        // Cross-cutting singletons required by core services
+        AddCrossCuttingSingletons(services);
 
         // Document readers
         AddDocumentReaders(services);
