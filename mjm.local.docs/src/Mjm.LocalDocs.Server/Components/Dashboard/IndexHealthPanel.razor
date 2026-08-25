@@ -10,7 +10,7 @@
 <MudPaper Class="pa-5" Elevation="0" Style="border-radius: var(--ld-radius-lg); height: 100%;">
     <div class="d-flex align-center justify-space-between mb-3" style="gap: 8px;">
         <p class="ld-section-title" style="margin-bottom: 0;">INDEX HEALTH</p>
-        <MudTooltip Text="Re-check every chunk against the vector store">
+        <MudTooltip Text="Re-check every chunk against the vector store, and confirm externally stored files still exist">
             <MudIconButton Icon="@Icons.Material.Rounded.Refresh"
                            Size="Size.Small"
                            Disabled="@_busy"
@@ -181,11 +181,25 @@
             // totals happen to agree over different sets.
             var health = await Metrics.GetIndexHealthAsync(forceFullReconciliation: true);
             await HealthChanged.InvokeAsync(health);
+
+            // Every list this review can populate has to be reflected here. A toast that only
+            // looks at Broken would be a green all-clear popping up over a review that just
+            // discovered destroyed files or unfinished updates — the reassurance this whole
+            // check exists to remove. An unverified file is its own case: it is neither found
+            // nor cleared, so a clean-sounding toast would misreport the check as complete.
+            var findings = new List<string>();
+            if (health.Broken.Count > 0)
+                findings.Add($"{health.Broken.Count} document(s) need reindexing");
+            if (health.InterruptedUpdates.Count > 0)
+                findings.Add($"{health.InterruptedUpdates.Count} update(s) never finished");
+            if (health.MissingFiles.Count > 0)
+                findings.Add($"{health.MissingFiles.Count} file(s) missing");
+            if (health.UnverifiedFiles > 0)
+                findings.Add($"{health.UnverifiedFiles} file(s) could not be checked");
+
             Snackbar.Add(
-                health.Broken.Count == 0
-                    ? "All documents are indexed."
-                    : $"{health.Broken.Count} document(s) need reindexing.",
-                health.Broken.Count == 0 ? Severity.Success : Severity.Warning);
+                findings.Count == 0 ? "All documents are indexed." : string.Join("; ", findings) + ".",
+                findings.Count == 0 ? Severity.Success : Severity.Warning);
         }
         catch (Exception ex)
         {

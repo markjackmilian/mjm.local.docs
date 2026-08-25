@@ -93,12 +93,18 @@ public sealed record GrowthBucket(
 /// not. Populated only by a forced reconciliation — see the remarks on
 /// <c>DashboardMetricsService.GetIndexHealthAsync</c>.
 /// </param>
+/// <param name="UnverifiedFiles">
+/// How many documents' files could not be checked, because the storage call itself failed. Not
+/// the same as missing: an unverified file may be perfectly fine. It matters because silently
+/// skipping failures would let a total storage outage report a clean bill of health.
+/// </param>
 public sealed record IndexHealth(
     int ActiveDocuments,
     int FullyIndexed,
     IReadOnlyList<DocumentChunkTally> Broken,
     IReadOnlyList<InterruptedUpdate> InterruptedUpdates,
-    IReadOnlyList<MissingFile> MissingFiles);
+    IReadOnlyList<MissingFile> MissingFiles,
+    int UnverifiedFiles);
 
 /// <summary>
 /// Everything the dashboard renders in one payload.

@@ -121,9 +121,17 @@ public sealed class DashboardMetricsService
             broken.AddRange(await FindDocumentsMissingEmbeddingsAsync(chunked, cancellationToken));
         }
 
-        var missingFiles = forceFullReconciliation
-            ? await FindMissingFilesAsync(cancellationToken)
-            : [];
+        IReadOnlyList<MissingFile> missingFiles;
+        int unverifiedFiles;
+        if (forceFullReconciliation)
+        {
+            (missingFiles, unverifiedFiles) = await FindMissingFilesAsync(cancellationToken);
+        }
+        else
+        {
+            missingFiles = [];
+            unverifiedFiles = 0;
+        }
 
         var ordered = broken
             .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
@@ -136,30 +144,56 @@ public sealed class DashboardMetricsService
             .ToList();
 
         return new IndexHealth(
-            activeCount, activeCount - ordered.Count, ordered, orderedInterrupted, missingFiles);
+            activeCount, activeCount - ordered.Count, ordered, orderedInterrupted,
+            missingFiles, unverifiedFiles);
     }
 
-    private async Task<IReadOnlyList<MissingFile>> FindMissingFilesAsync(
+    private async Task<(IReadOnlyList<MissingFile> Missing, int Unverified)> FindMissingFilesAsync(
         CancellationToken cancellationToken)
     {
         if (_fileStorage is null)
-            return [];
+            return ([], 0);
 
         var candidates = await _repository.GetActiveExternalFilesAsync(cancellationToken);
         var missing = new List<MissingFile>();
+        var unverified = 0;
 
         foreach (var candidate in candidates)
         {
-            if (!await _fileStorage.FileExistsAsync(
-                    candidate.DocumentId, candidate.StorageLocation, cancellationToken))
+            bool exists;
+            try
+            {
+                exists = await _fileStorage.FileExistsAsync(
+                    candidate.DocumentId, candidate.StorageLocation, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // A real cancellation of this request, not a probe failure — propagate it
+                // rather than counting the document as unverified.
+                throw;
+            }
+            catch (Exception)
+            {
+                // The storage call itself failed: an auth failure, or throttling that outlived
+                // the SDK's retries. This document's file may be perfectly fine — the check
+                // simply could not run — so it must not land in Missing, whose entries tell the
+                // user reindexing will not help. One bad probe must not take down the ones
+                // already computed for every other document, so isolate it here and move on.
+                unverified++;
+                continue;
+            }
+
+            if (!exists)
             {
                 missing.Add(candidate);
             }
         }
 
-        return missing
+        var ordered = missing
             .OrderBy(f => f.FileName, StringComparer.CurrentCulture)
             .ToList();
+
+        return (ordered, unverified);
     }
 
     private async Task<IReadOnlyList<DocumentChunkTally>> FindDocumentsMissingEmbeddingsAsync(

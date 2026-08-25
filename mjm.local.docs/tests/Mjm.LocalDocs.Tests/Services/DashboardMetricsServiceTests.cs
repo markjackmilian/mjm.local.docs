@@ -443,4 +443,68 @@ public sealed class DashboardMetricsServiceTests
         Assert.Empty(health.MissingFiles);
         await _repository.DidNotReceive().GetActiveExternalFilesAsync(Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WhenAFileProbeThrows_TheBrokenListComputedEarlierStillComesBack()
+    {
+        // Broken is computed from the chunk tallies, entirely before the file check runs.
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 0)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(0L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(0L);
+        _repository.GetActiveExternalFilesAsync(Arg.Any<CancellationToken>())
+            .Returns([new MissingFile("doc-2", "doc-2.pdf", "proj-1/doc-2.pdf")]);
+        _fileStorage.FileExistsAsync("doc-2", "proj-1/doc-2.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("storage unavailable")));
+
+        var health = await CreateSut().GetIndexHealthAsync(forceFullReconciliation: true);
+
+        // A storage hiccup unrelated to doc-1 must not discard a result that has nothing to
+        // do with storage.
+        Assert.Equal("doc-1", Assert.Single(health.Broken).DocumentId);
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WhenAFileProbeThrows_CountsItAsUnverifiedNotMissing()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _repository.GetActiveExternalFilesAsync(Arg.Any<CancellationToken>())
+            .Returns([new MissingFile("doc-1", "doc-1.pdf", "proj-1/doc-1.pdf")]);
+        _fileStorage.FileExistsAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("storage unavailable")));
+
+        var health = await CreateSut().GetIndexHealthAsync(forceFullReconciliation: true);
+
+        // A document whose probe threw is not confirmed missing — MissingFiles tells the user
+        // reindexing will not help, which would be false for a file that was never actually
+        // checked.
+        Assert.Equal(1, health.UnverifiedFiles);
+        Assert.Empty(health.MissingFiles);
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WithOneThrowingAndOneMissingProbe_ReportsOneOfEach()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1), Tally("doc-2", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(2L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(2L);
+        _repository.GetActiveExternalFilesAsync(Arg.Any<CancellationToken>())
+            .Returns([
+                new MissingFile("doc-1", "doc-1.pdf", "proj-1/doc-1.pdf"),
+                new MissingFile("doc-2", "doc-2.pdf", "proj-1/doc-2.pdf")
+            ]);
+        _fileStorage.FileExistsAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .Returns(false);
+        _fileStorage.FileExistsAsync("doc-2", "proj-1/doc-2.pdf", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<bool>(new InvalidOperationException("storage unavailable")));
+
+        var health = await CreateSut().GetIndexHealthAsync(forceFullReconciliation: true);
+
+        Assert.Equal("doc-1", Assert.Single(health.MissingFiles).DocumentId);
+        Assert.Equal(1, health.UnverifiedFiles);
+    }
 }
