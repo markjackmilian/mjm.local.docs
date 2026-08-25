@@ -1292,3 +1292,360 @@ git commit -m "Resolve search filters in one join instead of per document"
 **Ordering dependencies.** Task 2 needs Task 1. Task 4 needs Task 3. Task 5 is independent of all four and could run first if that is more convenient.
 
 **One risk worth naming before execution.** Task 4 makes `IDocumentLockRegistry` a required constructor parameter on `DocumentService`, which breaks every construction site in the test project. That is intentional — an optional parameter with a no-op default would let the lock silently vanish — but it means Task 4's diff touches more test files than its own new cases, and a reviewer should expect that rather than read it as scope creep.
+
+---
+
+# Addendum — Closing the Lock's Coverage Gap
+
+The cross-cutting review of this plan found its central omission: the plan built a per-document lock and applied it to two of the five operations that mutate the stores it guards. It asked for `UpdateDocumentAsync` and `ReindexDocumentAsync` and never asked the question about `DeleteDocumentAsync`, about the ancestor walk inside the method it did lock, or about its own new project-delete service.
+
+These two tasks close that. Constraints, baselines and conventions are the plan's Global Constraints above, unchanged, except:
+
+- **Baseline before Addendum Task A:** 319 passed / 17 skipped / 0 failed.
+- **Deadlock argument, established once and relied on by both tasks.** Every acquisition in the codebase runs descendant-to-ancestor: `ReindexDocumentAsync` takes the target's lock and then, in the walk, its ancestors'; `UpdateDocumentAsync` takes the existing (soon-superseded) document's lock and calls `AddDocumentAsync`, which takes none. Nothing takes a descendant's lock while holding an ancestor's, so there is no opposing order and no cycle. Any future acquisition must preserve that direction — say so in the code where you add one.
+
+---
+
+## Addendum Task A: The two unlocked mutations inside `DocumentService`
+
+**Files:**
+- Modify: `src/Mjm.LocalDocs.Core/Services/DocumentService.cs`
+- Test: `tests/Mjm.LocalDocs.Tests/Services/DocumentServiceIndexingTests.cs`
+
+**Interfaces:** no signature changes. `DeleteDocumentAsync` and `CloseInterruptedUpdateAsync` keep the shapes they have.
+
+**Why `DeleteDocumentAsync` needs it.** It is the same shape as the two methods already locked — a multi-store wipe of exactly one document, whose key the registry already expresses — and it is reachable from a UI button and from the MCP `delete_document` tool while a reindex runs in another circuit. The harmful interleaving: a reindex holds the lock and is inside `IndexDocumentAsync` waiting on the embedding provider, which takes seconds. The delete, unlocked, removes the external file, removes the embeddings (a no-op — nothing has been upserted yet) and deletes the row, cascading the chunks away. The reindex then completes its `UpsertBatchAsync`, writing embeddings for chunk ids whose rows no longer exist. Those embeddings are unreachable by any future cleanup: with no document row, nothing will ever call `DeleteByDocumentIdAsync` for that id. And the reindex reports success.
+
+**Why the ancestor walk needs it.** `CloseInterruptedUpdateAsync` strips and supersedes documents whose ids are *not* the one the caller's lock was taken on, so the lock protects the child and nothing else. Worse, the guard that is supposed to protect ancestors opens during the walk: `HasActiveChildAsync` starts returning false for an ancestor the moment the walk supersedes the child below it, so a concurrent reindex of that ancestor passes its refusal guard exactly when it must not — and lands in the "superseded with chunks" state this plan's own Task 4 exists to prevent.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/Mjm.LocalDocs.Tests/Services/DocumentServiceIndexingTests.cs`:
+
+```csharp
+    [Fact]
+    public async Task DeleteDocumentAsync_TakesTheDocumentLockBeforeReadingIt()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        _repository.DeleteDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await _sut.DeleteDocumentAsync("doc-1");
+
+        // A reindex can be mid-flight inside IndexDocumentAsync while this runs. Unlocked, this
+        // delete cascades the chunks away and the reindex then upserts embeddings for ids whose
+        // rows are gone — orphans no cleanup path can ever reach, since there is no document row
+        // left for anything to key off.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task DeleteDocumentAsync_ReleasesTheLockWhenTheDeleteThrows()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        _repository.DeleteDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("db went away"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.DeleteDocumentAsync("doc-1"));
+
+        await _lockHandle.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_LocksEachAncestorBeforeRetiringIt()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // The walk mutates a document other than the one the caller's lock covers, and reads that
+        // ancestor's IsSuperseded before acting on it — a check-then-act on someone else's key.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_LocksEveryAncestorOfADoublyInterruptedChain()
+    {
+        var version3 = CreateDocument("doc-3", parentDocumentId: "doc-2");
+
+        _repository.GetDocumentAsync("doc-3", Arg.Any<CancellationToken>()).Returns(version3);
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-2", parentDocumentId: "doc-1"));
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-3", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-3");
+
+        await _locks.Received(1).AcquireAsync("doc-2", Arg.Any<CancellationToken>());
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+        // One handle per ancestor plus the caller's own: released, not accumulated.
+        await _lockHandle.Received(3).DisposeAsync();
+    }
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~DocumentServiceIndexingTests"`
+Expected: FAIL. `DeleteDocumentAsync_TakesTheDocumentLockBeforeReadingIt` fails because no acquisition happens at all; the two ancestor tests fail on the missing `AcquireAsync("doc-1")`.
+
+- [ ] **Step 3: Lock the delete**
+
+Add as the first statement of `DeleteDocumentAsync`, above the `GetDocumentAsync` call:
+
+```csharp
+        // First, for the same reason it is first in ReindexDocumentAsync: the read below decides
+        // whether an external file needs deleting, which is itself a check-then-act. And a reindex
+        // holding this lock may be inside IndexDocumentAsync awaiting the embedding provider — its
+        // pending upsert would otherwise write embeddings for chunk ids this delete has already
+        // cascaded away, leaving orphans nothing can reach without a document row to key off.
+        await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
+```
+
+- [ ] **Step 4: Lock each ancestor in the walk**
+
+In `CloseInterruptedUpdateAsync`, add as the first statement *inside* the `while` body, above the `GetDocumentAsync`:
+
+```csharp
+            // This walk mutates documents other than the one the caller's lock covers, and the
+            // IsSuperseded read below is a check-then-act on the ancestor's own key — the guard
+            // protecting it opens the moment the child beneath it is superseded. Acquisition runs
+            // descendant-to-ancestor everywhere in this class, so holding the caller's lock while
+            // taking this one cannot cycle. CancellationToken.None for the same reason the rest of
+            // the closure uses it: a cancellation landing mid-walk is what strands a half-retired
+            // version.
+            await using var ancestorLock = await _locks.AcquireAsync(parentId, CancellationToken.None);
+```
+
+A `using` declaration inside a loop body is scoped to that body, so it releases at the end of every iteration — including the `continue` that skips an already-retired ancestor and the `return` that stops at a missing one. Do not restructure the loop, and do not hoist the acquisition out of it: holding every ancestor's lock at once would widen the held set for no benefit.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `dotnet test`
+Expected: PASS, 323 (319 baseline + 4). Every pre-existing test must pass untouched; if one needs its assertions changed, stop and report rather than adjusting it.
+
+- [ ] **Step 6: Sabotage check**
+
+Remove the acquisition you added in Step 4, run the focused filter, and confirm the two ancestor tests fail rather than pass. Restore it. This technique has caught a toothless assertion three times in this branch's history; report what you observed.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/Mjm.LocalDocs.Core/Services/DocumentService.cs tests/Mjm.LocalDocs.Tests/Services/DocumentServiceIndexingTests.cs
+git commit -m "Lock the document delete and each ancestor the walk retires"
+```
+
+---
+
+## Addendum Task B: The project sweep, and telling the user a delete was partial
+
+**Files:**
+- Modify: `src/Mjm.LocalDocs.Core/Services/ProjectService.cs`
+- Modify: `src/Mjm.LocalDocs.Core/DependencyInjection/ServiceCollectionExtensions.cs`
+- Modify: `src/Mjm.LocalDocs.Server/Components/Pages/Projects/ProjectDetail.razor`
+- Modify: `src/Mjm.LocalDocs.Server/Components/Pages/Projects/ProjectList.razor`
+- Test: `tests/Mjm.LocalDocs.Tests/Services/ProjectServiceTests.cs`
+
+**Interfaces:**
+- Consumes: `IDocumentLockRegistry` (Task 3 of the main plan).
+- Produces: `ProjectService`'s constructor gains a required `IDocumentLockRegistry` parameter, before the optional `fileStorage`.
+
+**Why.** The sweep has two holes. It takes no per-document lock, so a reindex or update of one of the project's documents can write embeddings between the sweep visiting that document and the project row being deleted — permanent orphans. And it works from a single snapshot read at the top, so a document created *after* that read loses its row to the cascade with its file and embeddings never visited: a permanent file leak produced by the method whose stated purpose is preventing file leaks.
+
+Neither hole can be closed completely without a transaction spanning stores that do not share one. Both can be narrowed to a window measured in the time between two adjacent statements, and what remains must be stated in the XML docs rather than promised away — the current docs say the method deletes "everything belonging to it", which is the kind of comment that stops the next reader from looking.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `tests/Mjm.LocalDocs.Tests/Services/ProjectServiceTests.cs`:
+
+```csharp
+    [Fact]
+    public async Task DeleteProjectAsync_TakesEachDocumentsLockWhileStrippingIt()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // Without the lock, a reindex of doc-1 can write embeddings between this sweep visiting it
+        // and the cascade removing its row — orphans with no document row left to key a cleanup off.
+        await _locks.Received().AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_SweepsDocumentsThatAppearedAfterTheFirstRead()
+    {
+        // First read sees one document; by the second, an upload has added another.
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns(
+                _ => [new DocumentFileLocation("doc-1", null)],
+                _ => [new DocumentFileLocation("doc-1", null), new DocumentFileLocation("doc-2", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // doc-2 would otherwise lose its row to the cascade with its file and embeddings intact.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-2", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_DoesNotStripTheSameDocumentTwice()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // The second read returns doc-1 again; re-stripping it would be wasted round trips.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WhenAFileDeleteThrows_LeavesTheProjectIntact()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", "proj-1/doc-1.pdf")]);
+        _fileStorage.DeleteFileAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("file is locked"));
+
+        await Assert.ThrowsAsync<IOException>(() => CreateSut().DeleteProjectAsync("proj-1"));
+
+        // The whole ordering argument rests on this: the document rows survive, so a retry still
+        // knows what is left to clean up.
+        await _projects.DidNotReceive().DeleteAsync("proj-1", Arg.Any<CancellationToken>());
+    }
+```
+
+The fixture needs the registry. Add beside the existing substitutes:
+
+```csharp
+    private readonly IDocumentLockRegistry _locks = Substitute.For<IDocumentLockRegistry>();
+    private readonly IAsyncDisposable _lockHandle = Substitute.For<IAsyncDisposable>();
+```
+
+stub it in the class constructor:
+
+```csharp
+    public ProjectServiceTests() =>
+        _locks.AcquireAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_lockHandle);
+```
+
+and thread it through `CreateSut`, before the optional file storage.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `dotnet test tests/Mjm.LocalDocs.Tests/Mjm.LocalDocs.Tests.csproj --filter "FullyQualifiedName~ProjectServiceTests"`
+Expected: BUILD FAILURE — no `ProjectService` constructor takes an `IDocumentLockRegistry`.
+
+- [ ] **Step 3: Take the parameter**
+
+Add the field and the constructor parameter, positioned before the optional `fileStorage` so its default is unaffected:
+
+```csharp
+    /// <param name="locks">Per-document lock registry, so the sweep cannot race per-document work.</param>
+```
+
+Update the DI factory in `src/Mjm.LocalDocs.Core/DependencyInjection/ServiceCollectionExtensions.cs` to resolve it with `GetRequiredService` and pass it in the matching position, and add `IDocumentLockRegistry` to that method's summary list of required services.
+
+- [ ] **Step 4: Sweep under the lock, twice, and say what remains**
+
+Replace the body of `DeleteProjectAsync` with:
+
+```csharp
+        // Read the ids first: deleting the project cascades the document rows away, and with them
+        // the only record of which embeddings and files were supposed to go too.
+        var swept = new HashSet<string>(StringComparer.Ordinal);
+
+        await StripDocumentsAsync(
+            await _documents.GetFileLocationsByProjectAsync(projectId, cancellationToken),
+            swept,
+            cancellationToken);
+
+        // Read again immediately before the delete. A document created between the first read and
+        // here would otherwise lose its row to the cascade with its file and embeddings untouched —
+        // a permanent leak produced by the method meant to prevent one. This narrows that window to
+        // the gap between this sweep and the next statement; it does not close it, and nothing
+        // short of a transaction spanning three stores would.
+        await StripDocumentsAsync(
+            await _documents.GetFileLocationsByProjectAsync(projectId, cancellationToken),
+            swept,
+            cancellationToken);
+
+        return await _projects.DeleteAsync(projectId, cancellationToken);
+    }
+
+    private async Task StripDocumentsAsync(
+        IReadOnlyList<DocumentFileLocation> locations,
+        HashSet<string> swept,
+        CancellationToken cancellationToken)
+    {
+        foreach (var location in locations)
+        {
+            if (!swept.Add(location.DocumentId))
+                continue;
+
+            // Under the document's own lock: without it a concurrent reindex can write embeddings
+            // between this strip and the cascade that removes the row, leaving orphans with no
+            // document row left for any cleanup to key off.
+            await using var documentLock = await _locks.AcquireAsync(location.DocumentId, cancellationToken);
+
+            if (_fileStorage is not null && !string.IsNullOrEmpty(location.StorageLocation))
+            {
+                await _fileStorage.DeleteFileAsync(
+                    location.DocumentId,
+                    location.StorageLocation,
+                    cancellationToken);
+            }
+
+            await _vectorStore.DeleteByDocumentIdAsync(location.DocumentId, cancellationToken);
+        }
+    }
+```
+
+Then replace the method's `<summary>` and `<returns>` docs so they stop over-promising. State that it removes the project together with the embeddings and externally-stored files that no database cascade reaches; that a failure part-way leaves the project and its document rows intact, so a retry is idempotent and completes the job; that documents created during the call may still be missed, and the residual window is between the second sweep and the delete; and that documents already swept when a failure occurs have permanently lost their original file even though their rows survive.
+
+- [ ] **Step 5: Tell the user a failed delete was partial**
+
+Both `ProjectDetail.razor` and `ProjectList.razor` catch the exception and report `ex.Message`. That reads as "nothing happened", when in fact the files of every document the sweep reached are already gone and a retry is required to finish. Change each message to say the deletion was incomplete and must be retried, keeping the exception's message alongside it so the cause is still visible, and keeping each page's existing `Severity` and surrounding flow exactly as they are.
+
+- [ ] **Step 6: Verify**
+
+Run: `dotnet test`
+Expected: PASS, 327 (323 after Task A + 4 here).
+
+Run: `dotnet build --no-incremental`
+Expected: 0 errors. Grep for each changed filename and report what you find.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/Mjm.LocalDocs.Core src/Mjm.LocalDocs.Server/Components/Pages/Projects tests/Mjm.LocalDocs.Tests/Services/ProjectServiceTests.cs
+git commit -m "Sweep a project's documents under their own locks, twice"
+```
+
+---
+
+## Addendum Self-Review
+
+**Coverage.** Important 1 → Task A Step 3. Important 2 → Task A Step 4. Important 3, both holes → Task B Step 4. Important 4 → Task B Step 5. After these, the lock covers five of the six mutating operations; `AddDocumentAsync` remains deliberately unlocked, for the reason its own XML docs already record.
+
+**Not in this addendum, deliberately.** The health probe still never checks that a `FileStorageLocation` resolves, so a document whose original file was destroyed by a partially-failed project delete is reported as merely "needs reindexing" and goes green after a reindex rebuilds its embeddings from `ExtractedText`. Task B Step 5 makes the user aware at the moment of failure, which is the cheap mitigation; making the state *visible afterwards* needs a new signal and is its own piece of work. Also not here: cleaning up orphans from past deletions, and the `LIKE '{documentId}_chunk_%'` wildcard hazard where an underscore in a document id could over-match.
+
+**One thing to expect in review.** Task B doubles the reads and can, in the worst case, take a lock per document twice — once per sweep. The `swept` set makes the second pass a no-op for everything the first covered, so the doubling is one extra query plus one lock acquisition per document that appeared late. That is the cost of narrowing a leak that otherwise loses user files permanently.
