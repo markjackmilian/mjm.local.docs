@@ -41,7 +41,7 @@
             </MudText>
         </div>
 
-        @if (Health.Broken.Count == 0 && Health.InterruptedUpdates.Count == 0)
+        @if (Health.Broken.Count == 0 && Health.InterruptedUpdates.Count == 0 && Health.MissingFiles.Count == 0)
         {
             <div class="d-flex align-center" style="gap: 8px;">
                 <MudIcon Icon="@Icons.Material.Rounded.CheckCircle"
@@ -100,6 +100,29 @@
                                    OnClick="@(() => CompleteUpdateAsync(update))">
                             Finish
                         </MudButton>
+                    </div>
+                }
+            }
+
+            @if (Health.MissingFiles.Count > 0)
+            {
+                <MudText Style="font-size: 0.75rem; font-weight: 600; color: var(--ld-text-primary); margin: 12px 0 6px;">
+                    Original file missing
+                </MudText>
+                <MudText Style="font-size: 0.6875rem; color: var(--ld-text-muted); margin-bottom: 6px;">
+                    Still searchable, but the file cannot be downloaded. Reindexing will not bring it back.
+                </MudText>
+
+                @foreach (var file in Health.MissingFiles)
+                {
+                    <div class="d-flex align-center" style="gap: 8px; padding: 6px 0; border-top: 1px solid var(--ld-border);">
+                        <MudIcon Icon="@Icons.Material.Rounded.LinkOff"
+                                 Style="font-size: 0.875rem; color: var(--ld-stat-rose-icon);" />
+                        <MudTooltip Text="@($"{file.FileName} — {file.StorageLocation}")">
+                            <MudText Style="font-size: 0.75rem; color: var(--ld-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px;">
+                                @file.FileName
+                            </MudText>
+                        </MudTooltip>
                     </div>
                 }
             }

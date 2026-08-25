@@ -57,7 +57,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ApiTokenService>();
 
         // Dashboard read-side metrics (growth series + index health)
-        services.AddScoped<DashboardMetricsService>();
+        services.AddScoped<DashboardMetricsService>(sp => new DashboardMetricsService(
+            sp.GetRequiredService<IDocumentRepository>(),
+            sp.GetRequiredService<IVectorStore>(),
+            sp.GetService<TimeProvider>(),
+            sp.GetService<IDocumentFileStorage>()));
 
         return services;
     }

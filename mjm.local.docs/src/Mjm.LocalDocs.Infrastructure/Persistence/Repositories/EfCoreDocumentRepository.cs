@@ -483,6 +483,17 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<MissingFile>> GetActiveExternalFilesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Documents
+            .AsNoTracking()
+            .Where(d => !d.IsSuperseded && d.FileStorageLocation != null)
+            .Select(d => new MissingFile(d.Id, d.FileName, d.FileStorageLocation!))
+            .ToListAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers

@@ -64,6 +64,27 @@ public abstract class DocumentRepositoryAggregateTests
         }
     }
 
+    protected async Task SeedExternalDocumentAsync(
+        string id,
+        string storageLocation,
+        bool isSuperseded = false)
+    {
+        await EnsureProjectAsync("proj-1");
+
+        await Sut.AddDocumentAsync(new Document
+        {
+            Id = id,
+            ProjectId = "proj-1",
+            FileName = $"{id}.pdf",
+            FileExtension = ".pdf",
+            FileSizeBytes = 10,
+            ExtractedText = "text",
+            FileStorageLocation = storageLocation,
+            IsSuperseded = isSuperseded,
+            CreatedAt = Jan
+        });
+    }
+
     [Fact]
     public async Task GetContributionsSinceAsync_ReturnsOnlyDocumentsAtOrAfterTheBoundary()
     {
@@ -379,5 +400,41 @@ public abstract class DocumentRepositoryAggregateTests
         var context = await Sut.GetChunkDocumentContextAsync([]);
 
         Assert.Empty(context);
+    }
+
+    [Fact]
+    public async Task GetActiveExternalFilesAsync_ReturnsDocumentsWithAnExternalPath()
+    {
+        await SeedExternalDocumentAsync("doc-1", "proj-1/doc-1.pdf");
+
+        var files = await Sut.GetActiveExternalFilesAsync();
+
+        var file = Assert.Single(files);
+        Assert.Equal("doc-1", file.DocumentId);
+        Assert.Equal("doc-1.pdf", file.FileName);
+        Assert.Equal("proj-1/doc-1.pdf", file.StorageLocation);
+    }
+
+    [Fact]
+    public async Task GetActiveExternalFilesAsync_IgnoresDocumentsStoredInTheDatabase()
+    {
+        // A null FileStorageLocation means the content is in the row, so there is no file to lose.
+        await SeedDocumentAsync("doc-1");
+
+        var files = await Sut.GetActiveExternalFilesAsync();
+
+        Assert.Empty(files);
+    }
+
+    [Fact]
+    public async Task GetActiveExternalFilesAsync_IgnoresSupersededDocuments()
+    {
+        // A superseded version is not offered for download, so a missing file behind it is not a
+        // loss the user can act on.
+        await SeedExternalDocumentAsync("doc-1", "proj-1/doc-1.pdf", isSuperseded: true);
+
+        var files = await Sut.GetActiveExternalFilesAsync();
+
+        Assert.Empty(files);
     }
 }

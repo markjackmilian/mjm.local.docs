@@ -20,6 +20,7 @@ public sealed class DashboardMetricsService
     private readonly IDocumentRepository _repository;
     private readonly IVectorStore _vectorStore;
     private readonly TimeProvider _timeProvider;
+    private readonly IDocumentFileStorage? _fileStorage;
 
     /// <summary>
     /// Creates a new <see cref="DashboardMetricsService"/>.
@@ -27,14 +28,20 @@ public sealed class DashboardMetricsService
     /// <param name="repository">Document repository.</param>
     /// <param name="vectorStore">Vector store, for the embedding count and existence probe.</param>
     /// <param name="timeProvider">Clock. Defaults to <see cref="TimeProvider.System"/>.</param>
+    /// <param name="fileStorage">
+    /// External file storage, or null when file content is held in the database. When null there
+    /// is no external file to lose, so the missing-file check is skipped entirely.
+    /// </param>
     public DashboardMetricsService(
         IDocumentRepository repository,
         IVectorStore vectorStore,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IDocumentFileStorage? fileStorage = null)
     {
         _repository = repository;
         _vectorStore = vectorStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _fileStorage = fileStorage;
     }
 
     /// <summary>
@@ -81,6 +88,12 @@ public sealed class DashboardMetricsService
     /// <summary>
     /// Reports which active documents are not fully searchable.
     /// </summary>
+    /// <remarks>
+    /// The missing-file check runs only when <paramref name="forceFullReconciliation"/> is set. It
+    /// costs one storage round trip per document with an external file — against a blob account,
+    /// one network call each — so unlike every other check here it is not something the home page
+    /// pays on every load. The Review button is where it belongs.
+    /// </remarks>
     /// <param name="forceFullReconciliation">
     /// When true, probes every chunk instead of trusting the count comparison.
     /// </param>
@@ -108,6 +121,10 @@ public sealed class DashboardMetricsService
             broken.AddRange(await FindDocumentsMissingEmbeddingsAsync(chunked, cancellationToken));
         }
 
+        var missingFiles = forceFullReconciliation
+            ? await FindMissingFilesAsync(cancellationToken)
+            : [];
+
         var ordered = broken
             .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
             .ToList();
@@ -118,7 +135,31 @@ public sealed class DashboardMetricsService
             .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
             .ToList();
 
-        return new IndexHealth(activeCount, activeCount - ordered.Count, ordered, orderedInterrupted);
+        return new IndexHealth(
+            activeCount, activeCount - ordered.Count, ordered, orderedInterrupted, missingFiles);
+    }
+
+    private async Task<IReadOnlyList<MissingFile>> FindMissingFilesAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_fileStorage is null)
+            return [];
+
+        var candidates = await _repository.GetActiveExternalFilesAsync(cancellationToken);
+        var missing = new List<MissingFile>();
+
+        foreach (var candidate in candidates)
+        {
+            if (!await _fileStorage.FileExistsAsync(
+                    candidate.DocumentId, candidate.StorageLocation, cancellationToken))
+            {
+                missing.Add(candidate);
+            }
+        }
+
+        return missing
+            .OrderBy(f => f.FileName, StringComparer.CurrentCulture)
+            .ToList();
     }
 
     private async Task<IReadOnlyList<DocumentChunkTally>> FindDocumentsMissingEmbeddingsAsync(

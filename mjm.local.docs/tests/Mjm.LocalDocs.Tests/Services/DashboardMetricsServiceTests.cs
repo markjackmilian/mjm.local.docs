@@ -12,6 +12,7 @@ public sealed class DashboardMetricsServiceTests
 {
     private readonly IDocumentRepository _repository = Substitute.For<IDocumentRepository>();
     private readonly IVectorStore _vectorStore = Substitute.For<IVectorStore>();
+    private readonly IDocumentFileStorage _fileStorage = Substitute.For<IDocumentFileStorage>();
 
     private static readonly DateTimeOffset Now = new(2026, 8, 20, 10, 0, 0, TimeSpan.Zero);
 
@@ -25,7 +26,7 @@ public sealed class DashboardMetricsServiceTests
     }
 
     private DashboardMetricsService CreateSut() =>
-        new(_repository, _vectorStore, new FixedTimeProvider(Now));
+        new(_repository, _vectorStore, new FixedTimeProvider(Now), _fileStorage);
 
     private void GivenContributions(params DocumentContribution[] contributions)
     {
@@ -370,5 +371,76 @@ public sealed class DashboardMetricsServiceTests
         // rather than being folded into Broken.
         Assert.Empty(health.Broken);
         Assert.Equal("doc-2", Assert.Single(health.InterruptedUpdates).DocumentId);
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WithoutForcing_DoesNotTouchFileStorage()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(1L);
+
+        var health = await CreateSut().GetIndexHealthAsync();
+
+        // One storage round trip per document, against a blob account, is not something the home
+        // page pays on every load.
+        Assert.Empty(health.MissingFiles);
+        await _repository.DidNotReceive().GetActiveExternalFilesAsync(Arg.Any<CancellationToken>());
+        await _fileStorage.DidNotReceive().FileExistsAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WhenForced_ReportsAFileThatNoLongerExists()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _repository.GetActiveExternalFilesAsync(Arg.Any<CancellationToken>())
+            .Returns([new MissingFile("doc-1", "doc-1.pdf", "proj-1/doc-1.pdf")]);
+        _fileStorage.FileExistsAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .Returns(false);
+
+        var health = await CreateSut().GetIndexHealthAsync(forceFullReconciliation: true);
+
+        // Searchable, fully indexed, and undownloadable. Nothing else in this payload can say so.
+        Assert.Empty(health.Broken);
+        Assert.Equal("doc-1", Assert.Single(health.MissingFiles).DocumentId);
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WhenForced_IgnoresFilesThatStillExist()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _repository.GetActiveExternalFilesAsync(Arg.Any<CancellationToken>())
+            .Returns([new MissingFile("doc-1", "doc-1.pdf", "proj-1/doc-1.pdf")]);
+        _fileStorage.FileExistsAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var health = await CreateSut().GetIndexHealthAsync(forceFullReconciliation: true);
+
+        Assert.Empty(health.MissingFiles);
+    }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_WithNoFileStorageConfigured_ReportsNoMissingFiles()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 1)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(1L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(1L);
+
+        var sut = new DashboardMetricsService(_repository, _vectorStore, new FixedTimeProvider(Now), fileStorage: null);
+
+        var health = await sut.GetIndexHealthAsync(forceFullReconciliation: true);
+
+        // Nothing to check, and no read wasted asking.
+        Assert.Empty(health.MissingFiles);
+        await _repository.DidNotReceive().GetActiveExternalFilesAsync(Arg.Any<CancellationToken>());
     }
 }

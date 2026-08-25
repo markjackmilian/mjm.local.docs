@@ -450,5 +450,17 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult<IReadOnlyList<ChunkDocumentContext>>(context);
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<MissingFile>> GetActiveExternalFilesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var files = _documents.Values
+            .Where(d => !d.IsSuperseded && !string.IsNullOrEmpty(d.FileStorageLocation))
+            .Select(d => new MissingFile(d.Id, d.FileName, d.FileStorageLocation!))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<MissingFile>>(files);
+    }
+
     #endregion
 }

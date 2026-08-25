@@ -86,11 +86,19 @@ public sealed record GrowthBucket(
 /// perfectly searchable, which is the problem — so is the older version they were meant to
 /// replace, and both answer the same query.
 /// </param>
+/// <param name="MissingFiles">
+/// Active documents whose row points at an external file that no longer exists. Distinct from
+/// <paramref name="Broken"/> in the direction that matters: these documents are perfectly
+/// searchable and cannot be repaired by reindexing, because the text survived and the file did
+/// not. Populated only by a forced reconciliation — see the remarks on
+/// <c>DashboardMetricsService.GetIndexHealthAsync</c>.
+/// </param>
 public sealed record IndexHealth(
     int ActiveDocuments,
     int FullyIndexed,
     IReadOnlyList<DocumentChunkTally> Broken,
-    IReadOnlyList<InterruptedUpdate> InterruptedUpdates);
+    IReadOnlyList<InterruptedUpdate> InterruptedUpdates,
+    IReadOnlyList<MissingFile> MissingFiles);
 
 /// <summary>
 /// Everything the dashboard renders in one payload.
@@ -130,3 +138,11 @@ public sealed record ChunkDocumentContext(
     string DocumentId,
     string ProjectId,
     bool IsSuperseded);
+
+/// <summary>
+/// An active document whose original file is stored outside the database.
+/// </summary>
+/// <param name="DocumentId">The document identifier.</param>
+/// <param name="FileName">The document's file name, for display.</param>
+/// <param name="StorageLocation">The external storage path the row points at.</param>
+public sealed record MissingFile(string DocumentId, string FileName, string StorageLocation);

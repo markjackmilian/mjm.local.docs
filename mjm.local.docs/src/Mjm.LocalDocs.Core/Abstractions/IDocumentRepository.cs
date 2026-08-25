@@ -319,5 +319,20 @@ public interface IDocumentRepository
         IEnumerable<string> chunkIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets every active document whose row points at an externally-stored file.
+    /// </summary>
+    /// <remarks>
+    /// Returns the documents that *claim* an external file; whether each file still exists is the
+    /// caller's question to ask, because only the caller knows which storage provider is
+    /// configured. Three scalar columns, no text and no blobs. Superseded versions are excluded:
+    /// they are not offered for download, so a missing file behind one is not a loss the user can
+    /// act on.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One record per active document with an external path, in no guaranteed order.</returns>
+    Task<IReadOnlyList<MissingFile>> GetActiveExternalFilesAsync(
+        CancellationToken cancellationToken = default);
+
     #endregion
 }
