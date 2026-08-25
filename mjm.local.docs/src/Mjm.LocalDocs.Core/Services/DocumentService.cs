@@ -160,12 +160,13 @@ public sealed class DocumentService
         // 2. Save the new version (reuses the full AddDocumentAsync pipeline: file storage, chunks, embeddings)
         var savedDocument = await AddDocumentAsync(newVersionDocument, cancellationToken);
 
-        // 3. Supersede the old document
-        await _repository.SupersedeDocumentAsync(existingDocumentId, cancellationToken);
+        // 3. Strip the previous version's index BEFORE retiring it. Superseding first would, on
+        //    an interruption, leave a superseded document that kept its chunks: absent from the
+        //    active-only tallies, invisible to the count comparison, and refused by reindex.
+        await StripIndexAsync(existingDocumentId, cancellationToken);
 
-        // 4. Remove chunks and embeddings from the old document (keep metadata + extracted text)
-        await _vectorStore.DeleteByDocumentIdAsync(existingDocumentId, cancellationToken);
-        await _repository.DeleteChunksByDocumentAsync(existingDocumentId, cancellationToken);
+        // 4. Retire the previous version.
+        await _repository.SupersedeDocumentAsync(existingDocumentId, cancellationToken);
 
         return savedDocument;
     }
@@ -210,14 +211,9 @@ public sealed class DocumentService
 
         try
         {
-            // Clean slate so a retry after a partial failure cannot duplicate chunks. Chunks
-            // go first: interrupted here, the document is left with zero chunks, which the
-            // dashboard reports as broken. Deleting embeddings first would leave chunk rows
-            // behind, and a document with chunks reads as healthy while being unreachable.
-            // Both wipes sit inside the try so a failure is compensated and wrapped rather
-            // than escaping as a raw provider exception.
-            await _repository.DeleteChunksByDocumentAsync(documentId, cancellationToken);
-            await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+            // Clean slate so a retry after a partial failure cannot duplicate chunks. Inside the
+            // try, so a failure here is compensated and wrapped rather than escaping raw.
+            await StripIndexAsync(documentId, cancellationToken);
 
             chunkCount = await IndexDocumentAsync(document, cancellationToken);
         }
@@ -283,8 +279,7 @@ public sealed class DocumentService
             // and so remains closable on the next reindex; superseding first would leave a
             // superseded document still answering searches, invisible to the dashboard and
             // unrepairable, since reindexing a superseded document is refused by design.
-            await _vectorStore.DeleteByDocumentIdAsync(parent.Id, CancellationToken.None);
-            await _repository.DeleteChunksByDocumentAsync(parent.Id, CancellationToken.None);
+            await StripIndexAsync(parent.Id, CancellationToken.None);
             await _repository.SupersedeDocumentAsync(parent.Id, CancellationToken.None);
 
             parentId = parent.ParentDocumentId;
@@ -536,5 +531,21 @@ public sealed class DocumentService
         {
             // Intentionally ignored: never mask the original indexing failure.
         }
+    }
+
+    /// <summary>
+    /// Removes a document's chunks and their embeddings, leaving the document row itself intact.
+    /// </summary>
+    /// <remarks>
+    /// The single home for this pair, and the single decision about its order. Embeddings go
+    /// first: an interruption then leaves chunk rows without embeddings, which the health probe
+    /// reports as broken and a reindex repairs. Deleting chunks first would instead orphan the
+    /// embeddings, and orphans make the chunk and embedding totals permanently unequal, which
+    /// costs the health check's fast path on every dashboard load from then on.
+    /// </remarks>
+    private async Task StripIndexAsync(string documentId, CancellationToken cancellationToken)
+    {
+        await _vectorStore.DeleteByDocumentIdAsync(documentId, cancellationToken);
+        await _repository.DeleteChunksByDocumentAsync(documentId, cancellationToken);
     }
 }

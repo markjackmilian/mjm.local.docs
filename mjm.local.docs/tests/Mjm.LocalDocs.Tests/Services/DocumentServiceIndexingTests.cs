@@ -440,4 +440,51 @@ public sealed class DocumentServiceIndexingTests
 
         await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_StripsThePreviousIndexBeforeSupersedingIt()
+    {
+        var existing = CreateDocument("doc-1");
+        var newVersion = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(existing);
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>()).Returns(newVersion);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.UpdateDocumentAsync("doc-1", newVersion);
+
+        // Superseding first would leave a superseded document that kept its index if the deletes
+        // never ran: invisible to the active-only tallies, invisible to the count comparison, and
+        // unrepairable, since reindexing a superseded document is refused by design.
+        Received.InOrder(() =>
+        {
+            _vectorStore.DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_WhenStrippingThePreviousIndexFails_LeavesItActiveAndRepairable()
+    {
+        var existing = CreateDocument("doc-1");
+        var newVersion = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(existing);
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>()).Returns(newVersion);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+        _repository.DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("db went away"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateDocumentAsync("doc-1", newVersion));
+
+        // The old version must still be active, so the interrupted update stays derivable and a
+        // later reindex of the new version can still close it.
+        await _repository.DidNotReceive().SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+    }
 }
