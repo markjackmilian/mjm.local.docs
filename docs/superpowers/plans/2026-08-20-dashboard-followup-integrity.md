@@ -785,6 +785,19 @@ The all-clear line's condition must now account for both lists, so change it to:
         @if (Health.Broken.Count == 0 && Health.InterruptedUpdates.Count == 0)
 ```
 
+**And the broken-documents heading must be gated too.** Before this change, reaching the `else`
+branch guaranteed the broken list was non-empty, so "Uploaded but not searchable" could be
+unconditional. It no longer is: the case this whole plan exists for — two versions both active and
+both perfectly indexed — has an empty broken list and a non-empty interrupted one, which would
+print that heading with nothing under it. Wrap the heading and its `@foreach` in:
+
+```razor
+            @if (Health.Broken.Count > 0)
+            {
+                ...heading and foreach...
+            }
+```
+
 - [ ] **Step 2: Add the handler**
 
 Add to the `@code` block, next to `ReindexAsync`:
@@ -800,11 +813,12 @@ Add to the `@code` block, next to `ReindexAsync`:
         _busy = true;
         try
         {
+            int indexed;
             try
             {
                 // Reindexing the newer version rebuilds it and then retires every still-active
                 // ancestor, which is exactly what closing the update means.
-                await Documents.ReindexDocumentAsync(update.DocumentId);
+                indexed = await Documents.ReindexDocumentAsync(update.DocumentId);
             }
             catch (DocumentIndexingException ex)
             {
@@ -819,7 +833,19 @@ Add to the `@code` block, next to `ReindexAsync`:
                 return;
             }
 
-            Snackbar.Add($"{update.ParentFileName} has been retired.", Severity.Success);
+            if (indexed == 0)
+            {
+                // The service declines to close the update when the newer version indexes to
+                // nothing, so the parent is still active. Saying otherwise would be a green
+                // toast over an unchanged database.
+                Snackbar.Add(
+                    $"{update.FileName} has no extractable text, so the update cannot be finished — {update.ParentFileName} stays active.",
+                    Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add($"{update.ParentFileName} has been retired.", Severity.Success);
+            }
 
             try
             {

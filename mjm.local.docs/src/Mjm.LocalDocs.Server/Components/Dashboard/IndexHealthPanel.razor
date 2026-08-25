@@ -53,6 +53,8 @@
         }
         else
         {
+            @if (Health.Broken.Count > 0)
+            {
             <MudText Style="font-size: 0.75rem; font-weight: 600; color: var(--ld-text-primary); margin-bottom: 6px;">
                 Uploaded but not searchable
             </MudText>
@@ -72,6 +74,7 @@
                         Reindex
                     </MudButton>
                 </div>
+            }
             }
 
             @if (Health.InterruptedUpdates.Count > 0)
@@ -245,11 +248,12 @@
         _busy = true;
         try
         {
+            int indexed;
             try
             {
                 // Reindexing the newer version rebuilds it and then retires every still-active
                 // ancestor, which is exactly what closing the update means.
-                await Documents.ReindexDocumentAsync(update.DocumentId);
+                indexed = await Documents.ReindexDocumentAsync(update.DocumentId);
             }
             catch (DocumentIndexingException ex)
             {
@@ -264,7 +268,19 @@
                 return;
             }
 
-            Snackbar.Add($"{update.ParentFileName} has been retired.", Severity.Success);
+            if (indexed == 0)
+            {
+                // The service declines to close the update when the newer version indexes to
+                // nothing, so the parent is still active. Saying otherwise would be a green
+                // toast over an unchanged database.
+                Snackbar.Add(
+                    $"{update.FileName} has no extractable text, so the update cannot be finished — {update.ParentFileName} stays active.",
+                    Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add($"{update.ParentFileName} has been retired.", Severity.Success);
+            }
 
             try
             {
