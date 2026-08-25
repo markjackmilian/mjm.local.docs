@@ -114,7 +114,7 @@ The service owns the window arithmetic. `GetMetricsAsync(granularity, ct)` deriv
 2. If they match, the only broken documents are the zero-chunk ones, which the tally already knows. The health column renders from three cheap queries.
 3. The per-document probe runs **only** when the totals diverge — that is, only when something is genuinely broken.
 
-**Declared limitation:** equal totals over different sets would slip past the fast path. That is a pathological coincidence, and the panel's "Review" button forces full reconciliation regardless.
+**Declared limitations.** Equal totals over different sets would slip past the fast path — a pathological coincidence, and the panel's "Review" button forces full reconciliation regardless. More importantly, the totals are *not* reliably equal on a healthy knowledge base: deleting a project cascades through EF to its documents and chunks, but `chunk_embeddings` is not an EF-mapped table, so every project deletion orphans the embeddings it held and the two counts diverge permanently. The fast path therefore degrades to "always take the slow route" on any database where a project was ever deleted — correct, just not fast. Fixing that leak is out of scope here; the property that matters is that divergence can only cost performance, never correctness.
 
 ## Pipeline Fix
 

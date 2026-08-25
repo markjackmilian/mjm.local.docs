@@ -223,9 +223,16 @@ public interface IDocumentRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Counts all persisted chunks. In a healthy system this equals
-    /// <see cref="IVectorStore.CountAsync"/>, because chunks exist only for active documents.
+    /// Counts all persisted chunks.
     /// </summary>
+    /// <remarks>
+    /// Compared against <see cref="IVectorStore.CountAsync"/> as a cheap pre-check for the health
+    /// probe. The two are NOT guaranteed equal even on a healthy knowledge base: deleting a project
+    /// cascades through EF to its documents and chunks, but the embedding store is not an EF table,
+    /// so its rows are orphaned and the totals diverge permanently. A divergence therefore means
+    /// "run the full probe", never "something is broken" — the probe is what decides. The
+    /// consequence of orphans is a slower dashboard, never a wrong one.
+    /// </remarks>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The total number of chunks.</returns>
     Task<long> CountChunksAsync(CancellationToken cancellationToken = default);
