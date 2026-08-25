@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
             sp.GetRequiredService<IProjectRepository>(),
             sp.GetRequiredService<IDocumentRepository>(),
             sp.GetRequiredService<IVectorStore>(),
+            sp.GetRequiredService<IDocumentLockRegistry>(),
             sp.GetService<IDocumentFileStorage>()));
 
         // Chat service for static RAG path (AgenticProjectChatService in Infrastructure wraps this)

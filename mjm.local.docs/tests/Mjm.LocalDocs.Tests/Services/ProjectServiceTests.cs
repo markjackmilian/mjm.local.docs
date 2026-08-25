@@ -2,6 +2,7 @@ using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Models.Dashboard;
 using Mjm.LocalDocs.Core.Services;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace Mjm.LocalDocs.Tests.Services;
 
@@ -14,9 +15,14 @@ public sealed class ProjectServiceTests
     private readonly IDocumentRepository _documents = Substitute.For<IDocumentRepository>();
     private readonly IVectorStore _vectorStore = Substitute.For<IVectorStore>();
     private readonly IDocumentFileStorage _fileStorage = Substitute.For<IDocumentFileStorage>();
+    private readonly IDocumentLockRegistry _locks = Substitute.For<IDocumentLockRegistry>();
+    private readonly IAsyncDisposable _lockHandle = Substitute.For<IAsyncDisposable>();
+
+    public ProjectServiceTests() =>
+        _locks.AcquireAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(_lockHandle);
 
     private ProjectService CreateSut(bool withFileStorage = true) =>
-        new(_projects, _documents, _vectorStore, withFileStorage ? _fileStorage : null);
+        new(_projects, _documents, _vectorStore, _locks, withFileStorage ? _fileStorage : null);
 
     [Fact]
     public async Task DeleteProjectAsync_RemovesEveryDocumentsEmbeddings()
@@ -105,5 +111,63 @@ public sealed class ProjectServiceTests
         await CreateSut(withFileStorage: false).DeleteProjectAsync("proj-1");
 
         await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_TakesEachDocumentsLockWhileStrippingIt()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // Without the lock, a reindex of doc-1 can write embeddings between this sweep visiting it
+        // and the cascade removing its row — orphans with no document row left to key a cleanup off.
+        await _locks.Received().AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_SweepsDocumentsThatAppearedAfterTheFirstRead()
+    {
+        // First read sees one document; by the second, an upload has added another.
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns(
+                _ => [new DocumentFileLocation("doc-1", null)],
+                _ => [new DocumentFileLocation("doc-1", null), new DocumentFileLocation("doc-2", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // doc-2 would otherwise lose its row to the cascade with its file and embeddings intact.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-2", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_DoesNotStripTheSameDocumentTwice()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", null)]);
+        _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await CreateSut().DeleteProjectAsync("proj-1");
+
+        // The second read returns doc-1 again; re-stripping it would be wasted round trips.
+        await _vectorStore.Received(1).DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteProjectAsync_WhenAFileDeleteThrows_LeavesTheProjectIntact()
+    {
+        _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
+            .Returns([new DocumentFileLocation("doc-1", "proj-1/doc-1.pdf")]);
+        _fileStorage.DeleteFileAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("file is locked"));
+
+        await Assert.ThrowsAsync<IOException>(() => CreateSut().DeleteProjectAsync("proj-1"));
+
+        // The whole ordering argument rests on this: the document rows survive, so a retry still
+        // knows what is left to clean up.
+        await _projects.DidNotReceive().DeleteAsync("proj-1", Arg.Any<CancellationToken>());
     }
 }
