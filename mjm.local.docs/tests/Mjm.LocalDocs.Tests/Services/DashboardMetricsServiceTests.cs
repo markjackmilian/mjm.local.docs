@@ -353,4 +353,22 @@ public sealed class DashboardMetricsServiceTests
         Assert.Equal(1, metrics.NewInPeriod);
         Assert.Equal(1, metrics.NewInPreviousPeriod);
     }
+
+    [Fact]
+    public async Task GetIndexHealthAsync_CarriesInterruptedUpdates()
+    {
+        _repository.GetActiveDocumentChunkTalliesAsync(Arg.Any<CancellationToken>())
+            .Returns([Tally("doc-1", 2), Tally("doc-2", 2)]);
+        _repository.CountChunksAsync(Arg.Any<CancellationToken>()).Returns(4L);
+        _vectorStore.CountAsync(Arg.Any<CancellationToken>()).Returns(4L);
+        _repository.GetInterruptedUpdatesAsync(Arg.Any<CancellationToken>())
+            .Returns([new InterruptedUpdate("doc-2", "doc-2.txt", "doc-1", "doc-1.txt")]);
+
+        var health = await CreateSut().GetIndexHealthAsync();
+
+        // Both documents are perfectly indexed — that is exactly why this needs its own list
+        // rather than being folded into Broken.
+        Assert.Empty(health.Broken);
+        Assert.Equal("doc-2", Assert.Single(health.InterruptedUpdates).DocumentId);
+    }
 }

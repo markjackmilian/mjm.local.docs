@@ -171,7 +171,7 @@ else
     private string? _loadError;
     private GrowthGranularity _granularity = GrowthGranularity.Monthly;
     private DashboardMetrics? _metrics;
-    private IndexHealth _health = new(0, 0, []);
+    private IndexHealth _health = new(0, 0, [], []);
     private List<Project> _recentProjects = [];
     private IReadOnlyDictionary<string, int> _projectDocumentCounts = new Dictionary<string, int>();
 

@@ -416,6 +416,27 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<InterruptedUpdate>> GetInterruptedUpdatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        // A self-join over the two flags. Only four scalar columns are projected, so this never
+        // touches ExtractedText or FileContent.
+        return await _context.Documents
+            .AsNoTracking()
+            .Where(child => !child.IsSuperseded && child.ParentDocumentId != null)
+            .Join(
+                _context.Documents.AsNoTracking().Where(parent => !parent.IsSuperseded),
+                child => child.ParentDocumentId,
+                parent => parent.Id,
+                (child, parent) => new InterruptedUpdate(
+                    child.Id,
+                    child.FileName,
+                    parent.Id,
+                    parent.FileName))
+            .ToListAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers

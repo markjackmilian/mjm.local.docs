@@ -201,4 +201,67 @@ public abstract class DocumentRepositoryAggregateTests
 
         Assert.Empty(ownership);
     }
+
+    [Fact]
+    public async Task GetInterruptedUpdatesAsync_WhenTheParentWasRetired_ReturnsNothing()
+    {
+        await SeedDocumentAsync("doc-1", isSuperseded: true);
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1");
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        Assert.Empty(interrupted);
+    }
+
+    [Fact]
+    public async Task GetInterruptedUpdatesAsync_WhenBothVersionsAreActive_ReturnsThePair()
+    {
+        await SeedDocumentAsync("doc-1");
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1");
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        var pair = Assert.Single(interrupted);
+        Assert.Equal("doc-2", pair.DocumentId);
+        Assert.Equal("doc-1", pair.ParentDocumentId);
+        Assert.Equal("doc-2.txt", pair.FileName);
+        Assert.Equal("doc-1.txt", pair.ParentFileName);
+    }
+
+    [Fact]
+    public async Task GetInterruptedUpdatesAsync_IgnoresADocumentWithNoParent()
+    {
+        await SeedDocumentAsync("doc-1");
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        Assert.Empty(interrupted);
+    }
+
+    [Fact]
+    public async Task GetInterruptedUpdatesAsync_IgnoresASupersededChild()
+    {
+        // A retired child whose parent is somehow still active is not an interrupted update the
+        // reindex path can close, so it must not be offered as one.
+        await SeedDocumentAsync("doc-1");
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1", isSuperseded: true);
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        Assert.Empty(interrupted);
+    }
+
+    [Fact]
+    public async Task GetInterruptedUpdatesAsync_ReportsEachLinkOfADoublyInterruptedChain()
+    {
+        await SeedDocumentAsync("doc-1");
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1");
+        await SeedDocumentAsync("doc-3", parentDocumentId: "doc-2");
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        Assert.Equal(2, interrupted.Count);
+        Assert.Contains(interrupted, i => i.DocumentId == "doc-2" && i.ParentDocumentId == "doc-1");
+        Assert.Contains(interrupted, i => i.DocumentId == "doc-3" && i.ParentDocumentId == "doc-2");
+    }
 }

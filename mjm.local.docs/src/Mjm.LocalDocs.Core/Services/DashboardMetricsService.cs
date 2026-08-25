@@ -90,6 +90,8 @@ public sealed class DashboardMetricsService
         bool forceFullReconciliation = false,
         CancellationToken cancellationToken = default)
     {
+        var interrupted = await _repository.GetInterruptedUpdatesAsync(cancellationToken);
+
         var tallies = await _repository.GetActiveDocumentChunkTalliesAsync(cancellationToken);
         var activeCount = tallies.Count;
 
@@ -110,7 +112,7 @@ public sealed class DashboardMetricsService
             .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
             .ToList();
 
-        return new IndexHealth(activeCount, activeCount - ordered.Count, ordered);
+        return new IndexHealth(activeCount, activeCount - ordered.Count, ordered, interrupted);
     }
 
     private async Task<IReadOnlyList<DocumentChunkTally>> FindDocumentsMissingEmbeddingsAsync(

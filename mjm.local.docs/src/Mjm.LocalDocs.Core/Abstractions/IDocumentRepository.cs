@@ -252,5 +252,19 @@ public interface IDocumentRepository
         IEnumerable<string> documentIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets every update that never completed: an active document whose
+    /// <see cref="Document.ParentDocumentId"/> names another document that is also still active.
+    /// </summary>
+    /// <remarks>
+    /// Derived rather than stored, which is what allowed a failed update to leave the previous
+    /// version searchable instead of retiring it blind. Both versions answer the same query until
+    /// the update is closed, so this is a correctness signal, not a tidiness one.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One record per unclosed parent-child link, in no guaranteed order.</returns>
+    Task<IReadOnlyList<InterruptedUpdate>> GetInterruptedUpdatesAsync(
+        CancellationToken cancellationToken = default);
+
     #endregion
 }

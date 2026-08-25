@@ -36,6 +36,20 @@ public sealed record DocumentChunkTally(
     int ChunkCount);
 
 /// <summary>
+/// An update that never completed: a document that is still active even though a newer version
+/// of it is also active. Both answer the same searches until the update is closed.
+/// </summary>
+/// <param name="DocumentId">The newer version, still active.</param>
+/// <param name="FileName">The newer version's file name, for display.</param>
+/// <param name="ParentDocumentId">The older version, which should have been retired.</param>
+/// <param name="ParentFileName">The older version's file name, for display.</param>
+public sealed record InterruptedUpdate(
+    string DocumentId,
+    string FileName,
+    string ParentDocumentId,
+    string ParentFileName);
+
+/// <summary>
 /// Which document a chunk belongs to.
 /// </summary>
 /// <param name="DocumentId">The owning document identifier.</param>
@@ -67,10 +81,16 @@ public sealed record GrowthBucket(
 /// <param name="Broken">
 /// Documents that are not fully searchable: zero chunks, or at least one chunk without an embedding.
 /// </param>
+/// <param name="InterruptedUpdates">
+/// Updates that never completed. Distinct from <paramref name="Broken"/>: these documents are
+/// perfectly searchable, which is the problem — so is the older version they were meant to
+/// replace, and both answer the same query.
+/// </param>
 public sealed record IndexHealth(
     int ActiveDocuments,
     int FullyIndexed,
-    IReadOnlyList<DocumentChunkTally> Broken);
+    IReadOnlyList<DocumentChunkTally> Broken,
+    IReadOnlyList<InterruptedUpdate> InterruptedUpdates);
 
 /// <summary>
 /// Everything the dashboard renders in one payload.

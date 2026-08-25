@@ -377,5 +377,26 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult<IReadOnlyList<ChunkOwnership>>(ownership);
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<InterruptedUpdate>> GetInterruptedUpdatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var active = _documents.Values
+            .Where(d => !d.IsSuperseded)
+            .ToDictionary(d => d.Id, StringComparer.Ordinal);
+
+        var interrupted = active.Values
+            .Where(child => child.ParentDocumentId is not null
+                            && active.ContainsKey(child.ParentDocumentId))
+            .Select(child => new InterruptedUpdate(
+                child.Id,
+                child.FileName,
+                child.ParentDocumentId!,
+                active[child.ParentDocumentId!].FileName))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<InterruptedUpdate>>(interrupted);
+    }
+
     #endregion
 }
