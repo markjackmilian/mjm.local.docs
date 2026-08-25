@@ -25,13 +25,9 @@
 
 ## Branch
 
-These are pre-existing defects, not dashboard work, and `feature/dashboard` already carries 44 commits. Unless told otherwise, cut a fresh branch from the same base:
+**Continue on `feature/dashboard`.** An earlier draft of this plan said to cut a fresh branch from `develop` on the grounds that these are pre-existing defects. That was wrong: four of the five tasks would not compile there. `develop` has no `ReindexDocumentAsync`, no `DocumentIndexingException`, no `#region Dashboard Aggregates` on `IDocumentRepository`, and no `DocumentRepositoryAggregateTests` base class — all of it arrived with the two predecessor plans. The defects predate that work, but the code these fixes attach to does not.
 
-```bash
-git checkout -b fix/storage-leaks-and-concurrency develop
-```
-
-If the human directs otherwise, follow that instead and record it here.
+A separate branch cut from `feature/dashboard` would also work and would keep the two bodies of work independently revertable, at the cost of a merge chain: it could not reach `develop` until the dashboard branch did. Since the dashboard branch's fate is still undecided, one branch is less to manage. Do not create a second branch without being told to.
 
 ---
 
