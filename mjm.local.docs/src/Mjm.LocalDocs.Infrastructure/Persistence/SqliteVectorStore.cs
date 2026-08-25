@@ -118,6 +118,18 @@ public sealed class SqliteVectorStore : IVectorStore, IDisposable
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Escapes the LIKE wildcards in a document id so a prefix match cannot over-match.
+    /// </summary>
+    /// <remarks>
+    /// Backslash first: escaping it after the wildcards would double-escape the escapes this
+    /// method just inserted.
+    /// </remarks>
+    private static string EscapeLikePattern(string value) =>
+        value.Replace("\\", "\\\\")
+             .Replace("%", "\\%")
+             .Replace("_", "\\_");
+
     /// <inheritdoc />
     public async Task DeleteByDocumentIdAsync(
         string documentId,
@@ -127,8 +139,8 @@ public sealed class SqliteVectorStore : IVectorStore, IDisposable
 
         // Chunk IDs follow pattern: {documentId}_chunk_{index}
         await using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM chunk_embeddings WHERE chunk_id LIKE @pattern";
-        cmd.Parameters.AddWithValue("@pattern", $"{documentId}_chunk_%");
+        cmd.CommandText = "DELETE FROM chunk_embeddings WHERE chunk_id LIKE @pattern ESCAPE '\\'";
+        cmd.Parameters.AddWithValue("@pattern", $"{EscapeLikePattern(documentId)}_chunk_%");
 
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }

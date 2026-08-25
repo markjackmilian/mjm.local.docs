@@ -229,6 +229,34 @@ public sealed class SqliteVectorStoreTests : IDisposable
         await _sut.DeleteByDocumentIdAsync("non-existing-doc");
     }
 
+    [Fact]
+    public async Task DeleteByDocumentIdAsync_WithAnUnderscoreInTheId_DoesNotTouchASimilarDocument()
+    {
+        // In LIKE, _ matches any single character. Unescaped, deleting "doc_1" also deletes "docX1".
+        await _sut.UpsertAsync("doc_1_chunk_0", Dim128(0.1f));
+        await _sut.UpsertAsync("docX1_chunk_0", Dim128(0.2f));
+
+        await _sut.DeleteByDocumentIdAsync("doc_1");
+
+        var survivors = await _sut.GetExistingChunkIdsAsync(["doc_1_chunk_0", "docX1_chunk_0"]);
+
+        Assert.Equal(["docX1_chunk_0"], survivors);
+    }
+
+    [Fact]
+    public async Task DeleteByDocumentIdAsync_WithAPercentInTheId_DeletesOnlyThatDocument()
+    {
+        // And % matches any sequence, so an id containing it could clear a whole prefix.
+        await _sut.UpsertAsync("a%b_chunk_0", Dim128(0.1f));
+        await _sut.UpsertAsync("azzb_chunk_0", Dim128(0.2f));
+
+        await _sut.DeleteByDocumentIdAsync("a%b");
+
+        var survivors = await _sut.GetExistingChunkIdsAsync(["a%b_chunk_0", "azzb_chunk_0"]);
+
+        Assert.Equal(["azzb_chunk_0"], survivors);
+    }
+
     #endregion
 
     #region SearchAsync Tests
