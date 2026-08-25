@@ -518,4 +518,33 @@ public sealed class DocumentServiceIndexingTests
         // instead of claiming a repair that did not happen.
         Assert.Equal(0, indexed);
     }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_RefusesADocumentThatHasANewerActiveVersion()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        _repository.HasActiveChildAsync("doc-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.ReindexDocumentAsync("doc-1"));
+
+        // Rebuilding this one would leave two active indexed versions answering the same query:
+        // the caller has to reindex the newer version, which closes the chain.
+        await _repository.DidNotReceive().DeleteChunksByDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        await _vectorStore.DidNotReceive().DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_WithNoActiveChild_ProceedsNormally()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        _repository.HasActiveChildAsync("doc-1", Arg.Any<CancellationToken>()).Returns(false);
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        var indexed = await _sut.ReindexDocumentAsync("doc-1");
+
+        Assert.Equal(1, indexed);
+    }
 }

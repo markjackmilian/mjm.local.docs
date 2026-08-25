@@ -437,6 +437,16 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public Task<bool> HasActiveChildAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        return _context.Documents
+            .AsNoTracking()
+            .AnyAsync(d => !d.IsSuperseded && d.ParentDocumentId == documentId, cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers

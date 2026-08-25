@@ -398,5 +398,17 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult<IReadOnlyList<InterruptedUpdate>>(interrupted);
     }
 
+    /// <inheritdoc />
+    public Task<bool> HasActiveChildAsync(
+        string documentId,
+        CancellationToken cancellationToken = default)
+    {
+        var hasChild = _documents.Values.Any(d =>
+            !d.IsSuperseded
+            && string.Equals(d.ParentDocumentId, documentId, StringComparison.Ordinal));
+
+        return Task.FromResult(hasChild);
+    }
+
     #endregion
 }

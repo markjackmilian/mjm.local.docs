@@ -212,6 +212,13 @@ public sealed class DocumentService
                 $"Document '{documentId}' is superseded; superseded versions are not indexed by design.");
         }
 
+        if (await _repository.HasActiveChildAsync(documentId, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"Document '{documentId}' has a newer version that is still active. " +
+                "Reindex that newer version instead — doing so also retires this one.");
+        }
+
         int chunkCount;
 
         try

@@ -264,4 +264,30 @@ public abstract class DocumentRepositoryAggregateTests
         Assert.Contains(interrupted, i => i.DocumentId == "doc-2" && i.ParentDocumentId == "doc-1");
         Assert.Contains(interrupted, i => i.DocumentId == "doc-3" && i.ParentDocumentId == "doc-2");
     }
+
+    [Fact]
+    public async Task HasActiveChildAsync_WithAnActiveNewerVersion_ReturnsTrue()
+    {
+        await SeedDocumentAsync("doc-1");
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1");
+
+        Assert.True(await Sut.HasActiveChildAsync("doc-1"));
+    }
+
+    [Fact]
+    public async Task HasActiveChildAsync_WhenTheNewerVersionWasRetired_ReturnsFalse()
+    {
+        await SeedDocumentAsync("doc-1");
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-1", isSuperseded: true);
+
+        Assert.False(await Sut.HasActiveChildAsync("doc-1"));
+    }
+
+    [Fact]
+    public async Task HasActiveChildAsync_WithNoChildAtAll_ReturnsFalse()
+    {
+        await SeedDocumentAsync("doc-1");
+
+        Assert.False(await Sut.HasActiveChildAsync("doc-1"));
+    }
 }

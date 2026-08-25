@@ -266,5 +266,15 @@ public interface IDocumentRepository
     Task<IReadOnlyList<InterruptedUpdate>> GetInterruptedUpdatesAsync(
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Checks whether an active document names the given document as its parent.
+    /// </summary>
+    /// <param name="documentId">The candidate parent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when a newer version of this document is still active.</returns>
+    Task<bool> HasActiveChildAsync(
+        string documentId,
+        CancellationToken cancellationToken = default);
+
     #endregion
 }
