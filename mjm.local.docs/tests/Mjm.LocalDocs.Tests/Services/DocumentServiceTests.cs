@@ -1,5 +1,6 @@
 using Mjm.LocalDocs.Core.Abstractions;
 using Mjm.LocalDocs.Core.Models;
+using Mjm.LocalDocs.Core.Models.Dashboard;
 using Mjm.LocalDocs.Core.Services;
 using NSubstitute;
 
@@ -174,6 +175,13 @@ public sealed class DocumentServiceTests
             .Returns(vectorResults);
         _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns(chunks);
+        // Both chunks are owned by an active document, so the new join admits them. Without this
+        // stub every chunk is now an "unknown owner" and gets dropped by design.
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new ChunkDocumentContext("chunk-1", "doc-1", "proj-1", false),
+                new ChunkDocumentContext("chunk-2", "doc-1", "proj-1", false)
+            ]);
 
         // Act
         var results = await _sut.SearchAsync(query, limit: 10);
@@ -226,9 +234,14 @@ public sealed class DocumentServiceTests
             CreateTestChunk("chunk-2", "doc-2", 0),
             CreateTestChunk("chunk-3", "doc-1", 1)
         };
-        var documentsInProject = new List<Document>
+        // doc-1's chunks are in the requested project; doc-2's are in a different one. Expressed
+        // against the new collaborator (GetChunkDocumentContextAsync) rather than the old
+        // GetDocumentsByProjectAsync — same behaviour under test, only the collaborator moved.
+        var chunkContext = new List<ChunkDocumentContext>
         {
-            CreateTestDocument("doc-1", projectId)
+            new("chunk-1", "doc-1", projectId, false),
+            new("chunk-2", "doc-2", "proj-2", false),
+            new("chunk-3", "doc-1", projectId, false)
         };
 
         _embeddingService.GenerateEmbeddingAsync(query, Arg.Any<CancellationToken>())
@@ -237,8 +250,8 @@ public sealed class DocumentServiceTests
             .Returns(vectorResults);
         _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns(chunks);
-        _repository.GetDocumentsByProjectAsync(projectId, Arg.Any<CancellationToken>())
-            .Returns(documentsInProject);
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(chunkContext);
 
         // Act
         var results = await _sut.SearchAsync(query, projectId: projectId, limit: 10);
@@ -565,8 +578,14 @@ public sealed class DocumentServiceTests
             CreateTestChunk("chunk-1", "doc-1", 0),
             CreateTestChunk("chunk-2", "doc-2", 0)
         };
-        var activeDoc = CreateTestDocument("doc-1", "proj-1");
-        var supersededDoc = CreateTestDocument("doc-2", "proj-1", isSuperseded: true);
+        // Expressed against the new collaborator (GetChunkDocumentContextAsync) rather than one
+        // GetDocumentAsync call per distinct result document — same behaviour under test, only the
+        // collaborator moved.
+        var chunkContext = new List<ChunkDocumentContext>
+        {
+            new("chunk-1", "doc-1", "proj-1", false),
+            new("chunk-2", "doc-2", "proj-1", true)
+        };
 
         _embeddingService.GenerateEmbeddingAsync(query, Arg.Any<CancellationToken>())
             .Returns(queryEmbedding);
@@ -574,10 +593,8 @@ public sealed class DocumentServiceTests
             .Returns(vectorResults);
         _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
             .Returns(chunks);
-        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
-            .Returns(activeDoc);
-        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
-            .Returns(supersededDoc);
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(chunkContext);
 
         // Act
         var results = await _sut.SearchAsync(query, limit: 10);
@@ -633,6 +650,104 @@ public sealed class DocumentServiceTests
 
         // Assert
         Assert.Equal(3, result.Count);
+    }
+
+    #endregion
+
+    #region SearchAsync ChunkDocumentContext Tests
+
+    [Fact]
+    public async Task SearchAsync_WithProjectFilter_DoesNotEnumerateTheProjectsDocuments()
+    {
+        _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestEmbedding());
+        _vectorStore.SearchAsync(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new VectorSearchResult { ChunkId = "doc-1_chunk_0", Score = 0.9 }]);
+        _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([CreateTestChunk("doc-1_chunk_0", "doc-1")]);
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new ChunkDocumentContext("doc-1_chunk_0", "doc-1", "proj-a", false)]);
+
+        var results = await _sut.SearchAsync("query", projectId: "proj-a");
+
+        Assert.Single(results);
+        // The old filter materialised every document in the project, FileContent included, to
+        // build a set of ids.
+        await _repository.DidNotReceive().GetDocumentsByProjectAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExcludesChunksFromAnotherProject()
+    {
+        _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestEmbedding());
+        _vectorStore.SearchAsync(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new VectorSearchResult { ChunkId = "doc-1_chunk_0", Score = 0.9 },
+                new VectorSearchResult { ChunkId = "doc-2_chunk_0", Score = 0.8 }
+            ]);
+        _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                CreateTestChunk("doc-1_chunk_0", "doc-1"),
+                CreateTestChunk("doc-2_chunk_0", "doc-2")
+            ]);
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new ChunkDocumentContext("doc-1_chunk_0", "doc-1", "proj-a", false),
+                new ChunkDocumentContext("doc-2_chunk_0", "doc-2", "proj-b", false)
+            ]);
+
+        var results = await _sut.SearchAsync("query", projectId: "proj-a");
+
+        Assert.Equal("doc-1_chunk_0", Assert.Single(results).Chunk.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_ExcludesSupersededOwnersWithoutQueryingPerDocument()
+    {
+        _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestEmbedding());
+        _vectorStore.SearchAsync(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new VectorSearchResult { ChunkId = "doc-1_chunk_0", Score = 0.9 },
+                new VectorSearchResult { ChunkId = "doc-2_chunk_0", Score = 0.8 }
+            ]);
+        _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                CreateTestChunk("doc-1_chunk_0", "doc-1"),
+                CreateTestChunk("doc-2_chunk_0", "doc-2")
+            ]);
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([
+                new ChunkDocumentContext("doc-1_chunk_0", "doc-1", "proj-a", false),
+                new ChunkDocumentContext("doc-2_chunk_0", "doc-2", "proj-a", true)
+            ]);
+
+        var results = await _sut.SearchAsync("query");
+
+        Assert.Equal("doc-1_chunk_0", Assert.Single(results).Chunk.Id);
+        // The old safety net loaded each distinct result document one at a time.
+        await _repository.DidNotReceive().GetDocumentAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SearchAsync_DropsAChunkWhoseOwnerIsUnknown()
+    {
+        _embeddingService.GenerateEmbeddingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(CreateTestEmbedding());
+        _vectorStore.SearchAsync(Arg.Any<ReadOnlyMemory<float>>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns([new VectorSearchResult { ChunkId = "orphan_chunk_0", Score = 0.9 }]);
+        _repository.GetChunksByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([CreateTestChunk("orphan_chunk_0", "doc-gone")]);
+        // An orphaned embedding whose chunk row survived but whose document did not.
+        _repository.GetChunkDocumentContextAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var results = await _sut.SearchAsync("query");
+
+        Assert.Empty(results);
     }
 
     #endregion

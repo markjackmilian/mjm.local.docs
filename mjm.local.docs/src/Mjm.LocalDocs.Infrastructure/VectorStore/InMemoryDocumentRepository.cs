@@ -423,5 +423,32 @@ public sealed class InMemoryDocumentRepository : IDocumentRepository
         return Task.FromResult<IReadOnlyList<DocumentFileLocation>>(locations);
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<ChunkDocumentContext>> GetChunkDocumentContextAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = chunkIds.ToHashSet(StringComparer.Ordinal);
+        if (ids.Count == 0)
+            return Task.FromResult<IReadOnlyList<ChunkDocumentContext>>([]);
+
+        var context = _chunks.Values
+            .Where(c => ids.Contains(c.Id))
+            .Select(c => new
+            {
+                Chunk = c,
+                Document = _documents.TryGetValue(c.DocumentId, out var d) ? d : null
+            })
+            .Where(x => x.Document is not null)
+            .Select(x => new ChunkDocumentContext(
+                x.Chunk.Id,
+                x.Document!.Id,
+                x.Document.ProjectId,
+                x.Document.IsSuperseded))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<ChunkDocumentContext>>(context);
+    }
+
     #endregion
 }

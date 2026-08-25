@@ -337,4 +337,47 @@ public abstract class DocumentRepositoryAggregateTests
 
         Assert.Empty(locations);
     }
+
+    [Fact]
+    public async Task GetChunkDocumentContextAsync_ReturnsTheOwningDocumentsProjectAndState()
+    {
+        await SeedDocumentAsync("doc-1", projectId: "proj-a", chunkCount: 2);
+
+        var context = await Sut.GetChunkDocumentContextAsync(["doc-1_chunk_0", "doc-1_chunk_1"]);
+
+        Assert.Equal(2, context.Count);
+        Assert.All(context, c => Assert.Equal("doc-1", c.DocumentId));
+        Assert.All(context, c => Assert.Equal("proj-a", c.ProjectId));
+        Assert.All(context, c => Assert.False(c.IsSuperseded));
+    }
+
+    [Fact]
+    public async Task GetChunkDocumentContextAsync_ReportsASupersededOwner()
+    {
+        await SeedDocumentAsync("doc-1", isSuperseded: true, chunkCount: 1);
+
+        var context = await Sut.GetChunkDocumentContextAsync(["doc-1_chunk_0"]);
+
+        Assert.True(Assert.Single(context).IsSuperseded);
+    }
+
+    [Fact]
+    public async Task GetChunkDocumentContextAsync_IgnoresUnknownChunkIds()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 1);
+
+        var context = await Sut.GetChunkDocumentContextAsync(["doc-1_chunk_0", "nonexistent_chunk_0"]);
+
+        Assert.Equal("doc-1_chunk_0", Assert.Single(context).ChunkId);
+    }
+
+    [Fact]
+    public async Task GetChunkDocumentContextAsync_WithEmptyInput_ReturnsEmpty()
+    {
+        await SeedDocumentAsync("doc-1", chunkCount: 1);
+
+        var context = await Sut.GetChunkDocumentContextAsync([]);
+
+        Assert.Empty(context);
+    }
 }

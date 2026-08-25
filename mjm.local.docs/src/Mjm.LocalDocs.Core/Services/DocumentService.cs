@@ -361,40 +361,30 @@ public sealed class DocumentService
         var chunkIds = vectorResults.Select(r => r.ChunkId).ToList();
         var chunks = await _repository.GetChunksByIdsAsync(chunkIds, cancellationToken);
 
-        // 4. Filter by project if specified
-        if (!string.IsNullOrEmpty(projectId))
-        {
-            var documentsInProject = await _repository.GetDocumentsByProjectAsync(projectId, cancellationToken);
-            var documentIds = documentsInProject.Select(d => d.Id).ToHashSet();
-            chunks = chunks.Where(c => documentIds.Contains(c.DocumentId)).ToList();
-        }
+        // 4. Resolve each matched chunk's owning document in one join over scalar columns. This
+        //    answers both post-filters at once. The old code enumerated every document in the
+        //    project to build a set of ids, and then loaded each result document one at a time —
+        //    both pulling FileContent and ExtractedText to answer questions about identity.
+        var context = await _repository.GetChunkDocumentContextAsync(chunkIds, cancellationToken);
 
-        // 5. Build search results with scores
+        var admissible = context
+            .Where(c => !c.IsSuperseded)
+            .Where(c => string.IsNullOrEmpty(projectId)
+                        || string.Equals(c.ProjectId, projectId, StringComparison.Ordinal))
+            .Select(c => c.ChunkId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // 5. Build results, keeping the vector store's ordering. A chunk with no context row is
+        //    dropped: its document is gone, so the embedding is an orphan.
         var chunkDict = chunks.ToDictionary(c => c.Id);
         var results = vectorResults
-            .Where(vr => chunkDict.ContainsKey(vr.ChunkId))
+            .Where(vr => admissible.Contains(vr.ChunkId) && chunkDict.ContainsKey(vr.ChunkId))
             .Select(vr => new SearchResult
             {
                 Chunk = chunkDict[vr.ChunkId],
                 Score = vr.Score
             })
             .ToList();
-
-        // 6. Filter out superseded documents (safety net — normally they have no embeddings)
-        if (results.Count > 0)
-        {
-            var docIds = results.Select(r => r.Chunk.DocumentId).Distinct().ToList();
-            var supersededIds = new HashSet<string>();
-            foreach (var docId in docIds)
-            {
-                var doc = await _repository.GetDocumentAsync(docId, cancellationToken);
-                if (doc?.IsSuperseded == true)
-                    supersededIds.Add(docId);
-            }
-
-            if (supersededIds.Count > 0)
-                results = results.Where(r => !supersededIds.Contains(r.Chunk.DocumentId)).ToList();
-        }
 
         return results.Take(limit).ToList();
     }

@@ -300,5 +300,20 @@ public interface IDocumentRepository
         string projectId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets the owning document's project and superseded state for each of the given chunks.
+    /// </summary>
+    /// <remarks>
+    /// Answers both of a search's post-filter questions — is this chunk's document in the
+    /// requested project, and has it been superseded — in one join over four scalar columns.
+    /// Unknown chunk ids are omitted rather than reported.
+    /// </remarks>
+    /// <param name="chunkIds">The chunk identifiers to resolve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One record per known chunk, in no guaranteed order.</returns>
+    Task<IReadOnlyList<ChunkDocumentContext>> GetChunkDocumentContextAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default);
+
     #endregion
 }

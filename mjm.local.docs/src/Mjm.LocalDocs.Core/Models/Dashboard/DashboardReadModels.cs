@@ -117,3 +117,16 @@ public sealed record DashboardMetrics(
 /// The external storage path, or null when the file content is held in the database row.
 /// </param>
 public sealed record DocumentFileLocation(string DocumentId, string? StorageLocation);
+
+/// <summary>
+/// The owning document's identity and state for one chunk, without its content.
+/// </summary>
+/// <param name="ChunkId">The chunk identifier.</param>
+/// <param name="DocumentId">The owning document identifier.</param>
+/// <param name="ProjectId">The owning project identifier, for filtering a search by project.</param>
+/// <param name="IsSuperseded">Whether the owning document has been replaced by a newer version.</param>
+public sealed record ChunkDocumentContext(
+    string ChunkId,
+    string DocumentId,
+    string ProjectId,
+    bool IsSuperseded);

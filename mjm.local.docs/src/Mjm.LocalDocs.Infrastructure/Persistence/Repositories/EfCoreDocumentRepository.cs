@@ -459,6 +459,30 @@ public sealed class EfCoreDocumentRepository : IDocumentRepository
             .ToListAsync(cancellationToken);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ChunkDocumentContext>> GetChunkDocumentContextAsync(
+        IEnumerable<string> chunkIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = chunkIds.ToList();
+        if (ids.Count == 0)
+            return [];
+
+        return await _context.DocumentChunks
+            .AsNoTracking()
+            .Where(c => ids.Contains(c.Id))
+            .Join(
+                _context.Documents.AsNoTracking(),
+                chunk => chunk.DocumentId,
+                document => document.Id,
+                (chunk, document) => new ChunkDocumentContext(
+                    chunk.Id,
+                    document.Id,
+                    document.ProjectId,
+                    document.IsSuperseded))
+            .ToListAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Private Helpers
