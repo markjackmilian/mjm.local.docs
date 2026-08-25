@@ -582,18 +582,72 @@ public sealed class DocumentServiceIndexingTests
     }
 
     [Fact]
-    public async Task ReindexDocumentAsync_WhenRefused_DoesNotHoldTheLockOpen()
+    public async Task ReindexDocumentAsync_WhenRefused_TakesTheLockAndReleasesIt()
     {
         _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
             .Returns(CreateDocument(isSuperseded: true));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.ReindexDocumentAsync("doc-1"));
 
-        // Whether the guard runs inside or outside the lock, the lock must not be left held.
-        if (_locks.ReceivedCalls().Any())
+        // The guard reads happen under the lock, because their answers can be invalidated by a
+        // concurrent update. So a refusal does acquire — and must still release.
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+        await _lockHandle.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ReadsTheDocumentOnlyAfterTakingTheLock()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        // Reading first would let a concurrent update supersede the document between the guard
+        // and the rebuild. Received(1) alone is order-insensitive and would not catch that.
+        Received.InOrder(() =>
         {
-            await _lockHandle.Received(1).DisposeAsync();
-        }
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_TakesTheLockBeforeReadingTheDocument()
+    {
+        var existing = CreateDocument("doc-1");
+        var newVersion = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(existing);
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>()).Returns(newVersion);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.UpdateDocumentAsync("doc-1", newVersion);
+
+        // The IsSuperseded read is half of the check-then-act being protected, so acquiring after
+        // it would protect nothing. Received(1) is order-insensitive and would miss the mistake.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_WhenTheTargetIsAlreadySuperseded_ReleasesTheLock()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-1", isSuperseded: true));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateDocumentAsync("doc-1", CreateDocument("doc-2", parentDocumentId: "doc-1")));
+
+        // This refusal throws while holding the lock — the highest-value release path in the change.
+        await _lockHandle.Received(1).DisposeAsync();
     }
 
     [Fact]

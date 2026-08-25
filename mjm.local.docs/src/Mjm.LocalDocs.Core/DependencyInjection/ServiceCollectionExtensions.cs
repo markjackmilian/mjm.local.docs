@@ -14,7 +14,7 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Adds core document services to the service collection.
     /// Requires IDocumentRepository, IVectorStore, IDocumentProcessor, IEmbeddingService,
-    /// and optionally IDocumentFileStorage to be registered.
+    /// IDocumentLockRegistry, and optionally IDocumentFileStorage to be registered.
     /// </summary>
     public static IServiceCollection AddLocalDocsCoreServices(this IServiceCollection services)
     {

@@ -50,6 +50,14 @@ public sealed class DocumentService
     /// Adds a document to the store, processing it into chunks with embeddings.
     /// File content is stored according to the configured FileStorageProvider.
     /// </summary>
+    /// <remarks>
+    /// Deliberately does not acquire <see cref="IDocumentLockRegistry"/>: it creates a document
+    /// nobody else can be holding a reference to yet, so there is nothing to contend with. Do not
+    /// add one — the registry is non-reentrant, and <see cref="UpdateDocumentAsync"/> calls this
+    /// method while already holding the lock on the existing document's id, which for an update
+    /// is exactly <paramref name="document"/>'s <c>ParentDocumentId</c>. A future acquisition here
+    /// keyed on that id would deadlock instantly and permanently.
+    /// </remarks>
     /// <param name="document">The document to add. Must have FileContent set.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The added document with FileStorageLocation set if using external storage.</returns>
@@ -207,6 +215,13 @@ public sealed class DocumentService
         string documentId,
         CancellationToken cancellationToken = default)
     {
+        // Acquire before reading: the guards below decide on state a concurrent update can
+        // invalidate. Evaluated outside the lock, a reindex could read "not superseded", block,
+        // and then rebuild from a stale document after an update had superseded it — leaving a
+        // superseded document that kept its chunks, which is the one state the tallies, the count
+        // comparison and this very guard all fail to catch.
+        await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
+
         var document = await _repository.GetDocumentAsync(documentId, cancellationToken);
 
         if (document is null)
@@ -224,8 +239,6 @@ public sealed class DocumentService
                 $"Document '{documentId}' has a newer version that is still active. " +
                 "Reindex that newer version instead — doing so also retires this one.");
         }
-
-        await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
 
         int chunkCount;
 
