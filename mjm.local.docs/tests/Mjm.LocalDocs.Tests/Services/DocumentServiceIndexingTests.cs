@@ -668,4 +668,79 @@ public sealed class DocumentServiceIndexingTests
         // updates of one document would both pass the guard and leave two active siblings.
         await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task DeleteDocumentAsync_TakesTheDocumentLockBeforeReadingIt()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        _repository.DeleteDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(true);
+
+        await _sut.DeleteDocumentAsync("doc-1");
+
+        // A reindex can be mid-flight inside IndexDocumentAsync while this runs. Unlocked, this
+        // delete cascades the chunks away and the reindex then upserts embeddings for ids whose
+        // rows are gone — orphans no cleanup path can ever reach, since there is no document row
+        // left for anything to key off.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task DeleteDocumentAsync_ReleasesTheLockWhenTheDeleteThrows()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        _repository.DeleteDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("db went away"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.DeleteDocumentAsync("doc-1"));
+
+        await _lockHandle.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_LocksEachAncestorBeforeRetiringIt()
+    {
+        var version2 = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>()).Returns(version2);
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-2");
+
+        // The walk mutates a document other than the one the caller's lock covers, and reads that
+        // ancestor's IsSuperseded before acting on it — a check-then-act on someone else's key.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.SupersedeDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_LocksEveryAncestorOfADoublyInterruptedChain()
+    {
+        var version3 = CreateDocument("doc-3", parentDocumentId: "doc-2");
+
+        _repository.GetDocumentAsync("doc-3", Arg.Any<CancellationToken>()).Returns(version3);
+        _repository.GetDocumentAsync("doc-2", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-2", parentDocumentId: "doc-1"));
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument("doc-1"));
+        GivenChunks("doc-3", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-3");
+
+        await _locks.Received(1).AcquireAsync("doc-2", Arg.Any<CancellationToken>());
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+        // One handle per ancestor plus the caller's own: released, not accumulated.
+        await _lockHandle.Received(3).DisposeAsync();
+    }
 }

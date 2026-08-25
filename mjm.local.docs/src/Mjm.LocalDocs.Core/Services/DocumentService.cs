@@ -295,6 +295,15 @@ public sealed class DocumentService
 
         while (parentId is not null && visited.Add(parentId))
         {
+            // This walk mutates documents other than the one the caller's lock covers, and the
+            // IsSuperseded read below is a check-then-act on the ancestor's own key — the guard
+            // protecting it opens the moment the child beneath it is superseded. Acquisition runs
+            // descendant-to-ancestor everywhere in this class, so holding the caller's lock while
+            // taking this one cannot cycle. CancellationToken.None for the same reason the rest of
+            // the closure uses it: a cancellation landing mid-walk is what strands a half-retired
+            // version.
+            await using var ancestorLock = await _locks.AcquireAsync(parentId, CancellationToken.None);
+
             var parent = await _repository.GetDocumentAsync(parentId, CancellationToken.None);
 
             if (parent is null)
@@ -399,6 +408,13 @@ public sealed class DocumentService
         string documentId,
         CancellationToken cancellationToken = default)
     {
+        // First, for the same reason it is first in ReindexDocumentAsync: the read below decides
+        // whether an external file needs deleting, which is itself a check-then-act. And a reindex
+        // holding this lock may be inside IndexDocumentAsync awaiting the embedding provider — its
+        // pending upsert would otherwise write embeddings for chunk ids this delete has already
+        // cascaded away, leaving orphans nothing can reach without a document row to key off.
+        await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
+
         // 1. Get document to check for external file storage
         var document = await _repository.GetDocumentAsync(documentId, cancellationToken);
         
