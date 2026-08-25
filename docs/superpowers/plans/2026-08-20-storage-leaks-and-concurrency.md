@@ -727,7 +727,9 @@ git commit -m "Add a per-document lock registry"
 
 **Why this task exists.** Task 3 built the primitive; this applies it to the two methods that need it. `ReindexDocumentAsync` strips then rebuilds. `UpdateDocumentAsync` reads `existing.IsSuperseded` and then acts on it, which is a check-then-act over the same document. Both are correct in sequence and wrong concurrently.
 
-`AddDocumentAsync` is deliberately **not** locked: it creates a document nobody else can be holding a reference to yet, so there is nothing to contend with.
+`AddDocumentAsync` is deliberately **not** locked: it creates a document nobody else can be holding a reference to yet, so there is nothing to contend with. Record that in the code rather than only here — add a remark to its XML docs saying it must not acquire the registry, and why. The lock is non-reentrant, so a future acquisition keyed on `ParentDocumentId` would deadlock instantly and permanently: `UpdateDocumentAsync` calls it while already holding the lock on exactly that id.
+
+Also update the summary comment on `AddLocalDocsCoreServices` in the Core `ServiceCollectionExtensions`, which lists the services this registration requires — it now hard-requires `IDocumentLockRegistry` through `GetRequiredService` and does not say so.
 
 **On the constructor parameter.** It is required, not optional with a null-object default. A silently-absent lock would turn this whole task into decoration, and the compiler finding every construction site — including the tests — is the point.
 
@@ -766,18 +768,72 @@ Append to `tests/Mjm.LocalDocs.Tests/Services/DocumentServiceIndexingTests.cs`:
     }
 
     [Fact]
-    public async Task ReindexDocumentAsync_WhenRefused_DoesNotHoldTheLockOpen()
+    public async Task ReindexDocumentAsync_WhenRefused_TakesTheLockAndReleasesIt()
     {
         _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
             .Returns(CreateDocument(isSuperseded: true));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _sut.ReindexDocumentAsync("doc-1"));
 
-        // Whether the guard runs inside or outside the lock, the lock must not be left held.
-        if (_locks.ReceivedCalls().Any())
+        // The guard reads happen under the lock, because their answers can be invalidated by a
+        // concurrent update. So a refusal does acquire — and must still release.
+        await _locks.Received(1).AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+        await _lockHandle.Received(1).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task ReindexDocumentAsync_ReadsTheDocumentOnlyAfterTakingTheLock()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(CreateDocument());
+        GivenChunks("doc-1", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.ReindexDocumentAsync("doc-1");
+
+        // Reading first would let a concurrent update supersede the document between the guard
+        // and the rebuild. Received(1) alone is order-insensitive and would not catch that.
+        Received.InOrder(() =>
         {
-            await _lockHandle.Received(1).DisposeAsync();
-        }
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_TakesTheLockBeforeReadingTheDocument()
+    {
+        var existing = CreateDocument("doc-1");
+        var newVersion = CreateDocument("doc-2", parentDocumentId: "doc-1");
+
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>()).Returns(existing);
+        _repository.AddDocumentAsync(Arg.Any<Document>(), Arg.Any<CancellationToken>()).Returns(newVersion);
+        GivenChunks("doc-2", 1);
+        _embeddingService.GenerateEmbeddingsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns([new float[] { 0.1f }]);
+
+        await _sut.UpdateDocumentAsync("doc-1", newVersion);
+
+        // The IsSuperseded read is half of the check-then-act being protected, so acquiring after
+        // it would protect nothing. Received(1) is order-insensitive and would miss the mistake.
+        Received.InOrder(() =>
+        {
+            _locks.AcquireAsync("doc-1", Arg.Any<CancellationToken>());
+            _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task UpdateDocumentAsync_WhenTheTargetIsAlreadySuperseded_ReleasesTheLock()
+    {
+        _repository.GetDocumentAsync("doc-1", Arg.Any<CancellationToken>())
+            .Returns(CreateDocument("doc-1", isSuperseded: true));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _sut.UpdateDocumentAsync("doc-1", CreateDocument("doc-2", parentDocumentId: "doc-1")));
+
+        // This refusal throws while holding the lock — the highest-value release path in the change.
+        await _lockHandle.Received(1).DisposeAsync();
     }
 
     [Fact]
@@ -852,13 +908,26 @@ placed with the other `GetRequiredService` calls, and threaded into the `new Doc
 
 - [ ] **Step 4: Hold the lock**
 
-In `ReindexDocumentAsync`, wrap everything after the two refusal guards. The guards stay outside: they are pure reads that reject before any mutation, and holding a lock to answer them would serialise refusals for no benefit.
+In `ReindexDocumentAsync`, the lock goes **first**, before the document is fetched.
+
+An earlier draft of this plan put it after the two refusal guards, reasoning that they are pure reads which reject before any mutation, so serialising refusals would buy nothing. That reasoning is wrong, and the interleaving it permits produces the worst state in the system:
+
+1. `ReindexDocumentAsync("P")` reads `P`, sees it is not superseded and has no active child, then blocks waiting for the lock.
+2. `UpdateDocumentAsync("P")` holds the lock: it adds child `C`, strips `P`'s index, supersedes `P`, and releases.
+3. The reindex acquires the lock and rebuilds from its **stale** `document` object — leaving `P` superseded **with chunks**. `CloseInterruptedUpdateAsync` retires `P`'s ancestors, never `P` itself.
+
+That end state is exactly the one the strip-before-supersede comment a few lines above exists to prevent: absent from the active-only tallies, invisible to the chunk-versus-embedding comparison, and refused by reindex. A guard whose answer can go stale before it is acted on is not a pure read. The cost of moving the lock up is one serialised refusal per contended document, which is a real cost only in the case where correctness demands it.
+
+So place this as the **first statement of the method body**, above the `GetDocumentAsync` call:
 
 ```csharp
+        // Acquire before reading: the guards below decide on state a concurrent update can
+        // invalidate. Evaluated outside the lock, a reindex could read "not superseded", block,
+        // and then rebuild from a stale document after an update had superseded it — leaving a
+        // superseded document that kept its chunks, which is the one state the tallies, the count
+        // comparison and this very guard all fail to catch.
         await using var _ = await _locks.AcquireAsync(documentId, cancellationToken);
 ```
-
-Place it immediately after the `HasActiveChildAsync` guard and before `int chunkCount;`.
 
 In `UpdateDocumentAsync`, the lock must be taken **before** the `IsSuperseded` read, because that read is half of the check-then-act being protected. Place it as the first statement of the method body:
 
@@ -871,7 +940,7 @@ Both use `await using`, so the lock is released on every exit including an excep
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `dotnet test`
-Expected: PASS, 299 (295 after Task 2 + 4 here). Every pre-existing `DocumentService` test must still pass with no change beyond the fixture wiring; if one needed its assertions altered, stop and report rather than adjusting it.
+Expected: PASS, with eight new cases across the two `DocumentService` suites. Every pre-existing `DocumentService` test must still pass with no change beyond the fixture wiring; if one needed its assertions altered, stop and report rather than adjusting it.
 
 - [ ] **Step 6: Commit**
 
