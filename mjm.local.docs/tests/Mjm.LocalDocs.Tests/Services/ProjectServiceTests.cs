@@ -68,7 +68,7 @@ public sealed class ProjectServiceTests
     public async Task DeleteProjectAsync_StripsContentBeforeDeletingTheProject()
     {
         _documents.GetFileLocationsByProjectAsync("proj-1", Arg.Any<CancellationToken>())
-            .Returns([new DocumentFileLocation("doc-1", null)]);
+            .Returns([new DocumentFileLocation("doc-1", "proj-1/doc-1.pdf")]);
         _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>()).Returns(true);
 
         await CreateSut().DeleteProjectAsync("proj-1");
@@ -77,6 +77,7 @@ public sealed class ProjectServiceTests
         // needed to find the embeddings and files that outlive them.
         Received.InOrder(() =>
         {
+            _fileStorage.DeleteFileAsync("doc-1", "proj-1/doc-1.pdf", Arg.Any<CancellationToken>());
             _vectorStore.DeleteByDocumentIdAsync("doc-1", Arg.Any<CancellationToken>());
             _projects.DeleteAsync("proj-1", Arg.Any<CancellationToken>());
         });

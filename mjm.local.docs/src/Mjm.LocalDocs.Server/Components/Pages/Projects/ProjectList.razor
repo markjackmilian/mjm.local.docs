@@ -174,15 +174,22 @@
 
          if (result is { Canceled: false })
          {
-             var deleted = await ProjectService.DeleteProjectAsync(project.Id);
-             if (deleted)
+             try
              {
-                 Snackbar.Add($"Project \"{project.Name}\" deleted successfully.", Severity.Success);
-                 await LoadProjectsAsync();
+                 var deleted = await ProjectService.DeleteProjectAsync(project.Id);
+                 if (deleted)
+                 {
+                     Snackbar.Add($"Project \"{project.Name}\" deleted successfully.", Severity.Success);
+                     await LoadProjectsAsync();
+                 }
+                 else
+                 {
+                     Snackbar.Add("Error deleting project.", Severity.Error);
+                 }
              }
-             else
+             catch (Exception ex)
              {
-                 Snackbar.Add("Error deleting project.", Severity.Error);
+                 Snackbar.Add($"Error deleting project: {ex.Message}", Severity.Error);
              }
          }
      }
