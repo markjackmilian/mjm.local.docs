@@ -112,7 +112,13 @@ public sealed class DashboardMetricsService
             .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
             .ToList();
 
-        return new IndexHealth(activeCount, activeCount - ordered.Count, ordered, interrupted);
+        // A list the UI renders should not reshuffle between refreshes, so order the
+        // interrupted list the same way.
+        var orderedInterrupted = interrupted
+            .OrderBy(t => t.FileName, StringComparer.CurrentCulture)
+            .ToList();
+
+        return new IndexHealth(activeCount, activeCount - ordered.Count, ordered, orderedInterrupted);
     }
 
     private async Task<IReadOnlyList<DocumentChunkTally>> FindDocumentsMissingEmbeddingsAsync(

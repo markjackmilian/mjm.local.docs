@@ -252,6 +252,19 @@ public abstract class DocumentRepositoryAggregateTests
     }
 
     [Fact]
+    public async Task GetInterruptedUpdatesAsync_IgnoresAChildWhoseParentNoLongerExists()
+    {
+        // ParentDocumentId carries no foreign-key constraint, so a hard-deleted parent leaves a
+        // dangling reference. That is not an interrupted update — there is no older version left
+        // to retire — and reporting one would offer a repair with nothing to repair.
+        await SeedDocumentAsync("doc-2", parentDocumentId: "doc-gone");
+
+        var interrupted = await Sut.GetInterruptedUpdatesAsync();
+
+        Assert.Empty(interrupted);
+    }
+
+    [Fact]
     public async Task GetInterruptedUpdatesAsync_ReportsEachLinkOfADoublyInterruptedChain()
     {
         await SeedDocumentAsync("doc-1");
