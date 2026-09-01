@@ -103,6 +103,19 @@
     --ld-login-logo-gradient: linear-gradient(135deg, #10B981, #059669);
     --ld-login-logo-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
 
+    /* Growth chart */
+    --ld-chart-series-1: #10B981;
+    --ld-chart-series-2: #A7F3D0;
+    --ld-chart-empty: #E5E7EB;
+    --ld-chart-grid: #E5E7EB;
+    --ld-chart-band-hover: rgba(16, 185, 129, 0.06);
+
+    /* Segmented control */
+    --ld-segment-track: #F3F4F6;
+    --ld-segment-thumb: #FFFFFF;
+    --ld-segment-text: #6B7280;
+    --ld-segment-text-active: #111827;
+
     /* Radii */
     --ld-radius-sm: 8px;
     --ld-radius-md: 12px;
@@ -213,6 +226,17 @@ html.dark {
     --ld-login-logo-gradient: linear-gradient(135deg, #34D399, #10B981);
     --ld-login-logo-shadow: 0 4px 12px rgba(52, 211, 153, 0.3);
 
+    --ld-chart-series-1: #34D399;
+    --ld-chart-series-2: #047857;
+    --ld-chart-empty: #334155;
+    --ld-chart-grid: #334155;
+    --ld-chart-band-hover: rgba(52, 211, 153, 0.08);
+
+    --ld-segment-track: #0F172A;
+    --ld-segment-thumb: #334155;
+    --ld-segment-text: #94A3B8;
+    --ld-segment-text-active: #F1F5F9;
+
     --ld-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
     --ld-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
     --ld-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
@@ -278,6 +302,41 @@ h1:focus { outline: none; }
 .ld-section-title { font-size: 0.6875rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ld-text-muted); margin-bottom: 12px; }
 
 .ld-empty-state { border: 2px dashed var(--ld-border); border-radius: var(--ld-radius-lg); text-align: center; padding: 48px 24px; background: var(--ld-surface); }
+
+/* --- Segmented control --------------------------------------- */
+.ld-segmented { display: inline-flex; align-items: center; gap: 2px; padding: 2px; background: var(--ld-segment-track); border-radius: var(--ld-radius-pill); }
+.ld-segmented-item { appearance: none; border: none; cursor: pointer; background: transparent; color: var(--ld-segment-text); font-family: inherit; font-size: 0.75rem; font-weight: 600; line-height: 1.4; padding: 5px 14px; border-radius: var(--ld-radius-pill); transition: background-color var(--ld-transition), color var(--ld-transition), box-shadow var(--ld-transition); }
+.ld-segmented-item:hover { color: var(--ld-segment-text-active); }
+.ld-segmented-item:focus-visible { outline: 2px solid var(--ld-primary); outline-offset: 2px; }
+.ld-segmented-item[aria-pressed="true"] { background: var(--ld-segment-thumb); color: var(--ld-segment-text-active); box-shadow: var(--ld-shadow-sm); }
+
+/* --- Growth chart -------------------------------------------- */
+.ld-gc-plot { position: relative; height: 240px; }
+.ld-gc-row { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 8px; transform: translateY(50%); pointer-events: none; }
+.ld-gc-ytick { width: 26px; flex-shrink: 0; text-align: right; font-size: 0.6875rem; line-height: 1; color: var(--ld-text-muted); font-variant-numeric: tabular-nums; }
+.ld-gc-line { flex: 1; height: 1px; background: var(--ld-chart-grid); opacity: 0.5; }
+.ld-gc-row-base .ld-gc-line { opacity: 1; }
+.ld-gc-bands { position: absolute; top: 0; bottom: 0; right: 0; left: 34px; display: flex; align-items: flex-end; }
+.ld-gc-band { flex: 1; height: 100%; position: relative; display: flex; align-items: flex-end; justify-content: center; }
+.ld-gc-band-glow { position: absolute; top: 0; right: 1px; bottom: 0; left: 1px; background: var(--ld-chart-band-hover); border-radius: 6px; opacity: 0; transition: opacity var(--ld-transition); }
+.ld-gc-band:hover .ld-gc-band-glow { opacity: 1; }
+.ld-gc-stack { position: relative; width: 22px; max-width: 58%; height: 100%; display: flex; flex-direction: column-reverse; justify-content: flex-start; }
+.ld-gc-seg { flex: none; width: 100%; }
+.ld-gc-seg:last-child { border-radius: 4px 4px 0 0; }
+.ld-gc-seg-1 { background: var(--ld-chart-series-1); }
+.ld-gc-seg-2 { background: var(--ld-chart-series-2); }
+.ld-gc-stub { position: relative; width: 22px; max-width: 58%; height: 3px; border-radius: 2px; background: var(--ld-chart-empty); }
+.ld-gc-partial { opacity: 0.55; }
+.ld-gc-xaxis { display: flex; padding-left: 34px; margin-top: 8px; }
+.ld-gc-xtick { flex: 1; text-align: center; font-size: 0.6875rem; line-height: 1; color: var(--ld-text-muted); }
+.ld-gc-xtick-current { color: var(--ld-text-secondary); font-weight: 600; }
+.ld-gc-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.ld-gc-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ld-gc-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.6875rem; color: var(--ld-text-secondary); }
+.ld-gc-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.ld-gc-dot-1 { background: var(--ld-chart-series-1); }
+.ld-gc-dot-2 { background: var(--ld-chart-series-2); }
+.ld-gc-note { font-size: 0.6875rem; color: var(--ld-text-muted); }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

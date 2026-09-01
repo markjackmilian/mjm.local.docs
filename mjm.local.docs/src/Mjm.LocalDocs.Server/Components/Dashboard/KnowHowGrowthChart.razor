@@ -1,8 +1,12 @@
+@using System.Globalization
 @using Mjm.LocalDocs.Core.Models.Dashboard
 
 @* Stacked bars: solid = brand-new documents, faded = new versions of existing ones.
    The split is the point — steady bars with a shrinking solid portion mean the
-   knowledge base is being rewritten, not expanded. *@
+   knowledge base is being rewritten, not expanded.
+
+   Hand-rolled rather than MudChart: the library takes its colours from C# and cannot
+   read the --ld-* tokens, so a charted card could never follow the light/dark theme. *@
 
 <MudPaper Class="pa-5" Elevation="0" Style="border-radius: var(--ld-radius-lg); height: 100%;">
     <div class="d-flex align-center justify-space-between mb-4" style="gap: 12px;">
@@ -12,31 +16,83 @@
                 New documents vs new versions
             </MudText>
         </div>
-        <MudToggleGroup T="GrowthGranularity"
-                        Value="@Granularity"
-                        ValueChanged="@OnGranularityChanged"
-                        Size="Size.Small"
-                        CheckMark="false">
-            <MudToggleItem Value="@GrowthGranularity.Monthly" Text="Months" />
-            <MudToggleItem Value="@GrowthGranularity.Weekly" Text="Weeks" />
-        </MudToggleGroup>
+        <div class="ld-segmented" role="group" aria-label="Bucket size">
+            <button type="button"
+                    class="ld-segmented-item"
+                    aria-pressed="@Pressed(GrowthGranularity.Monthly)"
+                    @onclick="@(() => OnGranularityChanged(GrowthGranularity.Monthly))">Months</button>
+            <button type="button"
+                    class="ld-segmented-item"
+                    aria-pressed="@Pressed(GrowthGranularity.Weekly)"
+                    @onclick="@(() => OnGranularityChanged(GrowthGranularity.Weekly))">Weeks</button>
+        </div>
     </div>
 
     @if (HasAnyContribution)
     {
-        <MudChart ChartType="ChartType.StackedBar"
-                  ChartSeries="@Series"
-                  XAxisLabels="@Labels"
-                  ChartOptions="@_chartOptions"
-                  Width="100%"
-                  Height="300px" />
+        var ceiling = NiceCeiling(Buckets.Max(b => b.NewDocuments + b.NewVersions));
 
-        @if (Buckets.Count > 0 && Buckets[^1].IsPartial)
-        {
-            <MudText Style="font-size: 0.6875rem; color: var(--ld-text-muted); margin-top: 4px;">
-                The last bar covers a period still in progress.
-            </MudText>
-        }
+        <div class="ld-gc-plot">
+            @for (var tick = TickCount; tick >= 0; tick--)
+            {
+                var isBaseline = tick == 0;
+                <div class="ld-gc-row @(isBaseline ? "ld-gc-row-base" : null)"
+                     style="bottom: @Percent((double)tick / TickCount);">
+                    <span class="ld-gc-ytick">@(ceiling / TickCount * tick)</span>
+                    <span class="ld-gc-line"></span>
+                </div>
+            }
+            <div class="ld-gc-bands">
+                @foreach (var bucket in Buckets)
+                {
+                    var faded = bucket.IsPartial ? "ld-gc-partial" : null;
+                    <div class="ld-gc-band" title="@Tooltip(bucket)">
+                        <span class="ld-gc-band-glow"></span>
+                        @if (bucket.NewDocuments + bucket.NewVersions == 0)
+                        {
+                            <span class="ld-gc-stub @faded"></span>
+                        }
+                        else
+                        {
+                            <span class="ld-gc-stack @faded">
+                                @if (bucket.NewDocuments > 0)
+                                {
+                                    <span class="ld-gc-seg ld-gc-seg-1"
+                                          style="height: @Percent((double)bucket.NewDocuments / ceiling);"></span>
+                                }
+                                @if (bucket.NewVersions > 0)
+                                {
+                                    <span class="ld-gc-seg ld-gc-seg-2"
+                                          style="height: @Percent((double)bucket.NewVersions / ceiling);"></span>
+                                }
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="ld-gc-xaxis">
+            @foreach (var bucket in Buckets)
+            {
+                <span class="ld-gc-xtick @(bucket.IsPartial ? "ld-gc-xtick-current" : null)">@bucket.Label</span>
+            }
+        </div>
+
+        <div class="ld-gc-footer">
+            <div class="ld-gc-legend">
+                <span class="ld-gc-legend-item">
+                    <span class="ld-gc-dot ld-gc-dot-1"></span>New documents
+                </span>
+                <span class="ld-gc-legend-item">
+                    <span class="ld-gc-dot ld-gc-dot-2"></span>New versions
+                </span>
+            </div>
+            @if (Buckets[^1].IsPartial)
+            {
+                <span class="ld-gc-note">The last bar covers a period still in progress.</span>
+            }
+        </div>
     }
     else
     {
@@ -63,28 +119,62 @@
     /// <summary>Raised when the user switches bucket size.</summary>
     [Parameter] public EventCallback<GrowthGranularity> GranularityChanged { get; set; }
 
-    // MudChart takes its colours from C#, not from the --ld-* CSS variables, so these two
-    // are fixed values chosen to read correctly against both the light and dark surfaces.
-    private readonly ChartOptions _chartOptions = new()
-    {
-        ChartPalette = ["#2563EB", "#93C5FD"],
-        InterpolationOption = InterpolationOption.Straight
-    };
+    /// <summary>Gridline intervals below the axis maximum.</summary>
+    private const int TickCount = 4;
+
+    /// <summary>Leading digits a nice axis step is allowed to start with.</summary>
+    private static readonly int[] StepUnits = [1, 2, 5];
 
     private bool HasAnyContribution =>
         Buckets.Any(b => b.NewDocuments > 0 || b.NewVersions > 0);
-
-    private List<ChartSeries> Series =>
-    [
-        new() { Name = "New documents", Data = Buckets.Select(b => (double)b.NewDocuments).ToArray() },
-        new() { Name = "New versions", Data = Buckets.Select(b => (double)b.NewVersions).ToArray() }
-    ];
-
-    private string[] Labels => Buckets.Select(b => b.Label).ToArray();
 
     private Task OnGranularityChanged(GrowthGranularity granularity)
     {
         Granularity = granularity;
         return GranularityChanged.InvokeAsync(granularity);
+    }
+
+    // Blazor drops a bool-valued attribute when it is false, which would defeat the
+    // [aria-pressed="true"] selector that paints the active segment. Hence strings.
+    private string Pressed(GrowthGranularity granularity) =>
+        Granularity == granularity ? "true" : "false";
+
+    /// <summary>
+    /// Smallest axis maximum that divides into <see cref="TickCount"/> whole steps, so a bar of
+    /// four is not left as a stub under an axis that auto-scaled itself to twenty.
+    /// </summary>
+    private static int NiceCeiling(int max)
+    {
+        if (max <= TickCount)
+        {
+            return TickCount;
+        }
+
+        for (var magnitude = 1; magnitude <= 100_000_000; magnitude *= 10)
+        {
+            foreach (var unit in StepUnits)
+            {
+                var ceiling = unit * magnitude * TickCount;
+                if (ceiling >= max)
+                {
+                    return ceiling;
+                }
+            }
+        }
+
+        return max;
+    }
+
+    // Inline style values, so the decimal separator has to stay a dot whatever the server culture.
+    private static string Percent(double fraction) =>
+        (fraction * 100).ToString("0.###", CultureInfo.InvariantCulture) + "%";
+
+    private static string Tooltip(GrowthBucket bucket)
+    {
+        var documents = $"{bucket.NewDocuments} new document{(bucket.NewDocuments == 1 ? "" : "s")}";
+        var versions = $"{bucket.NewVersions} new version{(bucket.NewVersions == 1 ? "" : "s")}";
+        var progress = bucket.IsPartial ? " (still in progress)" : string.Empty;
+
+        return $"{bucket.Label} — {documents}, {versions}{progress}";
     }
 }
