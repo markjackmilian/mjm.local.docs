@@ -10,13 +10,18 @@ namespace Mjm.LocalDocs.Infrastructure.Embeddings;
 public sealed class SemanticKernelEmbeddingService : IEmbeddingService
 {
     private readonly IEmbeddingGenerator<string, Embedding<float>> _embeddingGenerator;
+    private readonly int _maxBatchSize;
 
     public SemanticKernelEmbeddingService(
         IEmbeddingGenerator<string, Embedding<float>> embeddingGenerator,
-        int embeddingDimension = 1536)
+        int embeddingDimension = 1536,
+        int maxBatchSize = 64)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxBatchSize, 1);
+
         _embeddingGenerator = embeddingGenerator;
         EmbeddingDimension = embeddingDimension;
+        _maxBatchSize = maxBatchSize;
     }
 
     /// <inheritdoc />
@@ -40,11 +45,22 @@ public sealed class SemanticKernelEmbeddingService : IEmbeddingService
         CancellationToken cancellationToken = default)
     {
         var textList = texts.ToList();
-        
-        var result = await _embeddingGenerator.GenerateAsync(
-            textList, 
-            cancellationToken: cancellationToken);
+        var results = new List<ReadOnlyMemory<float>>(textList.Count);
 
-        return result.Select(e => e.Vector).ToList();
+        // Split large documents into sub-batches so we never exceed the provider's
+        // per-request input/token limits. Chunk preserves order, so the returned
+        // vectors stay aligned with the input texts.
+        foreach (var batch in textList.Chunk(_maxBatchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var result = await _embeddingGenerator.GenerateAsync(
+                batch,
+                cancellationToken: cancellationToken);
+
+            results.AddRange(result.Select(e => e.Vector));
+        }
+
+        return results;
     }
 }
